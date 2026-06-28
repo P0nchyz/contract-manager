@@ -1,0 +1,8 @@
+/* app/assets/css/main.css */
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* Order matters: tailwindcss before @nuxt/ui. Light mode only. */
+:root {
+  color-scheme: light;
+}
