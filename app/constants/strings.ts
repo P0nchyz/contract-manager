@@ -176,4 +176,55 @@ export const S = {
       overRow: 'Supera el volumen contratado',
     },
   },
+  estimateDetail: {
+    titlePrefix: 'Estimación',
+    period: 'Periodo',
+    sections: {
+      concepts: 'Conceptos',
+      summary: 'Resumen',
+      signatures: 'Firmas',
+      history: 'Historial',
+      attachments: 'Anexos',
+    },
+    signatures: {
+      signed: 'Firmada',
+      pending: 'Pendiente',
+      signedAt: 'Firmó',
+      unsigned: 'Sin firmar',
+    },
+    attachmentsEmpty: 'Esta estimación no tiene anexos.',
+    linkedLogNotes: 'Notas de bitácora vinculadas',
+    evidence: 'Evidencias',
+    // Workflow action buttons
+    actions: {
+      submit: 'Enviar a revisión',
+      approve: 'Aprobar',
+      returnWithNotes: 'Devolver con notas',
+      reject: 'Rechazar',
+      markPaid: 'Marcar como pagada',
+      sign: 'Firmar',
+    },
+    // Note modal (return / reject)
+    note: {
+      returnTitle: 'Devolver con notas',
+      rejectTitle: 'Rechazar estimación',
+      label: 'Motivo',
+      placeholder: 'Describe el motivo de la devolución o rechazo…',
+      required: 'Escribe el motivo.',
+    },
+    // Highlighted banner for the latest returned/rejected note
+    banner: {
+      withNotes: 'Devuelta con notas',
+      rejected: 'Rechazada',
+    },
+  },
+  workflow: {
+    created: 'Creada',
+    submitted: 'Enviada a revisión',
+    returned_with_notes: 'Devuelta con notas',
+    rejected: 'Rechazada',
+    approved: 'Aprobada',
+    paid: 'Pagada',
+    signed: 'Firmada',
+  },
 } as const
