@@ -13,17 +13,30 @@ const route = useRoute()
 const repos = useRepositories()
 const contractId = computed(() => route.params.contractId as string)
 
-// --- Load contract context, catalog, prior estimates (for "estimado anterior") ---
+// Edit mode is driven by ?edit=<estimateId>. Absent → create flow.
+const editId = computed(() => (typeof route.query.edit === 'string' ? route.query.edit : null))
+const isEdit = computed(() => !!editId.value)
+
+const toInputDate = (d: Date | string) => new Date(d).toISOString().slice(0, 10)
+
+// --- Load context, catalog, prior estimates, linkable files & log notes ------
 const { data, status, error, refresh } = await useAsyncData(
-  () => `estimate-new-${contractId.value}`,
+  () => `estimate-form-${contractId.value}-${editId.value ?? 'new'}`,
   async () => {
-    const [contract, concepts, prior, corporations] = await Promise.all([
+    const [contract, concepts, allEstimates, corporations, logNotes, files] = await Promise.all([
       repos.contracts.getById(contractId.value),
       repos.concepts.listByContract(contractId.value),
       repos.estimates.listByContract(contractId.value),
       repos.corporations.list().catch(() => []),
+      repos.logNotes.listByContract(contractId.value).catch(() => []),
+      repos.files.listFiles(contractId.value).catch(() => []),
     ])
-    // Accumulate the quantity estimated for each concept across prior estimates.
+    const editing = editId.value
+      ? await repos.estimates.getById(editId.value).catch(() => null)
+      : null
+
+    // "Estimado anterior" accumulates every OTHER estimate (exclude the one we edit).
+    const prior = allEstimates.filter((e) => e.id !== editId.value)
     const upToLast: Record<string, number> = {}
     for (const e of prior) {
       for (const li of e.lineItems) {
@@ -35,33 +48,100 @@ const { data, status, error, refresh } = await useAsyncData(
       contract,
       concepts,
       upToLast,
+      logNotes,
+      files,
       contractorName: contractor?.name ?? '—',
-      estimateNumber: prior.length + 1,
+      estimateNumber: editing ? editing.number : prior.length + 1,
+      editing,
     }
   },
 )
 
-// --- Editable state: period (green) + the per-concept quantity (green) -------
+// --- Editable state ----------------------------------------------------------
 const periodStart = ref('')
 const periodEnd = ref('')
 const qty = reactive<Record<string, number>>({})
+const selectedConceptIds = ref<string[]>([]) // concepts chosen by the user
+const selectedFiles = ref<string[]>([])
+const selectedLogNotes = ref<string[]>([])
+const inited = ref(false)
+const conceptSearch = ref('')
 
 watchEffect(() => {
-  if (!data.value) return
+  if (!data.value || inited.value) return
+  const editing = data.value.editing
   for (const c of data.value.concepts) {
-    if (!(c.id in qty)) qty[c.id] = 0
+    qty[c.id] = editing?.lineItems.find((li) => li.conceptId === c.id)?.inThisEstimate ?? 0
   }
+  if (editing) {
+    periodStart.value = toInputDate(editing.periodStart)
+    periodEnd.value = toInputDate(editing.periodEnd)
+    selectedFiles.value = [...editing.evidenceFileIds]
+    selectedLogNotes.value = [...editing.linkedLogNoteIds]
+    // Pre-select concepts that had a non-zero quantity in the saved draft.
+    selectedConceptIds.value = editing.lineItems
+      .filter((li) => li.inThisEstimate > 0)
+      .map((li) => li.conceptId)
+  }
+  inited.value = true
 })
 
-// --- Live computation — identical math to what the repository runs on save ----
+// Surface the return/reject reason when editing a returned estimate.
+const editNote = computed(() => {
+  const e = data.value?.editing
+  if (!e || (e.status !== 'with_notes' && e.status !== 'rejected')) return null
+  for (let i = e.history.length - 1; i >= 0; i--) {
+    const ev = e.history[i]
+    if (ev.action === 'returned_with_notes' || ev.action === 'rejected') {
+      return { rejected: e.status === 'rejected', note: ev.note }
+    }
+  }
+  return null
+})
+
+// --- Concept picker helpers --------------------------------------------------
+const filteredCatalog = computed(() => {
+  const q = conceptSearch.value.trim().toLowerCase()
+  if (!q || !data.value) return data.value?.concepts ?? []
+  return data.value.concepts.filter(
+    (c) =>
+      c.specificationNumber.toLowerCase().includes(q) ||
+      c.description.toLowerCase().includes(q),
+  )
+})
+
+function toggleConcept(id: string) {
+  const i = selectedConceptIds.value.indexOf(id)
+  if (i >= 0) {
+    selectedConceptIds.value.splice(i, 1)
+    qty[id] = 0 // clear quantity when deselecting
+  } else {
+    selectedConceptIds.value.push(id)
+  }
+}
+
+function addAllConcepts() {
+  selectedConceptIds.value = data.value?.concepts.map((c) => c.id) ?? []
+}
+function clearAllConcepts() {
+  selectedConceptIds.value = []
+  data.value?.concepts.forEach((c) => { qty[c.id] = 0 })
+}
+
+// --- Live computation (identical math to the repository) ----------------------
 const rates = computed(() => ({
   ...DEFAULT_RATES,
   anticipoPercentage: data.value?.contract.anticipoPercentage ?? 0,
 }))
 
+// Only the selected concepts appear in the editable grid.
+const selectedConcepts = computed(() =>
+  (data.value?.concepts ?? []).filter((c) => selectedConceptIds.value.includes(c.id)),
+)
+
 const lineItems = computed<EstimateLineItem[]>(() => {
   if (!data.value) return []
-  return data.value.concepts.map((c, i) =>
+  return selectedConcepts.value.map((c, i) =>
     buildLineItem(c, Number(qty[c.id]) || 0, data.value!.upToLast[c.id] ?? 0, i + 1),
   )
 })
@@ -71,6 +151,12 @@ const summary = computed(() => buildSummary(activeLines.value, rates.value))
 const overRows = computed(
   () => new Set(lineItems.value.filter((li) => li.toExecute < 0).map((li) => li.conceptId)),
 )
+
+function toggle(list: string[], id: string) {
+  const i = list.indexOf(id)
+  if (i >= 0) list.splice(i, 1)
+  else list.push(id)
+}
 
 // --- Validation --------------------------------------------------------------
 const periodError = computed(() => {
@@ -85,25 +171,35 @@ const canSubmit = computed(
 
 const ivaLabel = computed(() => `${F.summary.iva} (${rates.value.ivaRate}%)`)
 
-// --- Submit (creates a draft) ------------------------------------------------
+// --- Submit (create OR update draft) -----------------------------------------
 const loading = ref(false)
 const submitError = ref<string | null>(null)
+const backTo = computed(() =>
+  isEdit.value
+    ? `/contracts/${contractId.value}/estimates/${editId.value}`
+    : `/contracts/${contractId.value}/estimates`,
+)
 
 async function onSubmit() {
   if (!canSubmit.value || !data.value) return
   loading.value = true
   submitError.value = null
   try {
-    await repos.estimates.create({
-      contractId: contractId.value,
+    const payload = {
       periodStart: new Date(`${periodStart.value}T12:00:00`),
       periodEnd: new Date(`${periodEnd.value}T12:00:00`),
       lineItems: activeLines.value.map((li) => ({
         conceptId: li.conceptId,
         inThisEstimate: li.inThisEstimate,
       })),
-    })
-    await navigateTo(`/contracts/${contractId.value}/estimates`)
+      evidenceFileIds: [...selectedFiles.value],
+      linkedLogNoteIds: [...selectedLogNotes.value],
+    }
+    const result =
+      isEdit.value && editId.value
+        ? await repos.estimates.updateDraft(editId.value, payload)
+        : await repos.estimates.create({ contractId: contractId.value, ...payload })
+    await navigateTo(`/contracts/${contractId.value}/estimates/${result.id}`)
   } catch (e) {
     submitError.value = isRepositoryError(e) ? e.message : S.common.error
   } finally {
@@ -122,13 +218,15 @@ const sections = [
 <template>
   <UDashboardPanel id="estimate-new">
     <template #header>
-      <UDashboardNavbar :title="F.title">
+      <UDashboardNavbar
+        :title="isEdit && data ? `${F.editTitlePrefix} No. ${data.estimateNumber}` : F.title"
+      >
         <template #leading>
           <UButton
             icon="i-lucide-arrow-left"
             color="neutral"
             variant="ghost"
-            :to="`/contracts/${contractId}/estimates`"
+            :to="backTo"
             :aria-label="S.common.back"
           />
         </template>
@@ -136,7 +234,6 @@ const sections = [
     </template>
 
     <template #body>
-      <!-- Error / loading -->
       <UAlert
         v-if="error"
         color="error"
@@ -153,7 +250,17 @@ const sections = [
       </div>
 
       <div v-else-if="data" class="flex flex-col gap-6">
-        <!-- In-page section nav (single scrolling page) -->
+        <!-- Returned/rejected reason when editing -->
+        <UAlert
+          v-if="editNote"
+          :color="editNote.rejected ? 'error' : 'warning'"
+          variant="soft"
+          icon="i-lucide-message-square-warning"
+          :title="editNote.rejected ? S.estimateDetail.banner.rejected : S.estimateDetail.banner.withNotes"
+          :description="editNote.note"
+        />
+
+        <!-- Section nav -->
         <nav
           class="sticky top-0 z-10 -mx-4 mb-2 flex gap-1 border-b border-default bg-default/75 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6"
         >
@@ -211,12 +318,73 @@ const sections = [
         </UCard>
 
         <!-- 2 · Conceptos -->
-        <UCard id="sec-concepts" class="scroll-mt-16" :ui="{ body: 'p-0 sm:p-0' }">
+        <!-- 2a · Picker: choose which catalog concepts to include -->
+        <UCard id="sec-concepts" class="scroll-mt-16">
+          <template #header>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-2 font-medium">
+                <UIcon name="i-lucide-list-checks" class="size-4 text-muted" />
+                {{ F.sections.concepts }}
+              </div>
+              <span class="text-xs text-muted">
+                {{ selectedConceptIds.length }} {{ F.conceptPicker.selected }}
+              </span>
+            </div>
+          </template>
+
+          <p class="mb-3 text-xs text-muted">{{ F.conceptPicker.hint }}</p>
+
+          <!-- Search + bulk actions -->
+          <div class="mb-3 flex flex-wrap items-center gap-2">
+            <UInput
+              v-model="conceptSearch"
+              :placeholder="S.conceptCatalog.search"
+              icon="i-lucide-search"
+              class="w-56"
+            />
+            <UButton size="xs" color="neutral" variant="ghost" @click="addAllConcepts">
+              {{ F.conceptPicker.addAll }}
+            </UButton>
+            <UButton size="xs" color="neutral" variant="ghost" @click="clearAllConcepts">
+              {{ F.conceptPicker.clearAll }}
+            </UButton>
+          </div>
+
+          <div v-if="!data.concepts.length" class="text-sm text-muted">
+            {{ F.validation.noConcepts }}
+          </div>
+          <div v-else class="max-h-56 space-y-px overflow-y-auto rounded-lg border border-default p-1.5">
+            <div
+              v-for="c in filteredCatalog"
+              :key="c.id"
+              class="flex cursor-pointer items-start gap-3 rounded-md px-2 py-1.5 hover:bg-elevated"
+              :class="selectedConceptIds.includes(c.id) ? 'bg-elevated/60' : ''"
+              @click="toggleConcept(c.id)"
+            >
+              <UCheckbox
+                :model-value="selectedConceptIds.includes(c.id)"
+                class="mt-0.5 shrink-0 pointer-events-none"
+              />
+              <div class="min-w-0 flex-1">
+                <span class="font-mono text-xs text-muted">{{ c.specificationNumber }}</span>
+                <span class="ml-2 text-sm text-highlighted">{{ c.description }}</span>
+              </div>
+              <span class="shrink-0 text-xs text-muted">{{ c.unit }}</span>
+              <span class="shrink-0 tabular-nums text-xs text-muted">{{ formatMoney(c.unitPrice) }}</span>
+            </div>
+            <div v-if="filteredCatalog.length === 0" class="py-4 text-center text-sm text-muted">
+              {{ F.conceptPicker.noMatch }}
+            </div>
+          </div>
+        </UCard>
+
+        <!-- 2b · Grid: only selected concepts, quantities editable -->
+        <UCard v-if="selectedConceptIds.length > 0" :ui="{ body: 'p-0 sm:p-0' }">
           <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex items-center gap-2 font-medium">
                 <UIcon name="i-lucide-table" class="size-4 text-muted" />
-                {{ F.sections.concepts }}
+                {{ F.conceptPicker.label }}
               </div>
               <!-- Cell-color legend -->
               <div class="flex items-center gap-3 text-xs text-muted">
@@ -233,11 +401,7 @@ const sections = [
             </div>
           </template>
 
-          <div v-if="!data.concepts.length" class="p-6 text-center text-sm text-muted">
-            {{ F.validation.noConcepts }}
-          </div>
-
-          <div v-else class="overflow-x-auto">
+          <div class="overflow-x-auto">
             <table class="w-full min-w-[64rem] text-sm">
               <thead class="border-b border-default bg-elevated/50 text-xs text-muted">
                 <tr>
@@ -252,6 +416,7 @@ const sections = [
                   <th class="px-3 py-2 text-right font-medium text-error">{{ F.columns.toExecute }}</th>
                   <th class="px-3 py-2 text-right font-medium">{{ F.columns.unitPrice }}</th>
                   <th class="px-3 py-2 text-right font-medium text-error">{{ F.columns.totalAmount }}</th>
+                  <th class="px-3 py-2" />
                 </tr>
               </thead>
               <tbody class="divide-y divide-default">
@@ -261,8 +426,8 @@ const sections = [
                   :class="overRows.has(li.conceptId) ? 'bg-error/10' : ''"
                 >
                   <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ li.conceptNumber }}</td>
-                  <td class="px-3 py-2 text-highlighted">{{ li.specificationNumber }}</td>
-                  <td class="min-w-[16rem] px-3 py-2 text-highlighted">{{ li.description }}</td>
+                  <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ li.specificationNumber }}</td>
+                  <td class="min-w-[14rem] px-3 py-2 text-highlighted">{{ li.description }}</td>
                   <td class="px-3 py-2 text-muted">{{ li.unit }}</td>
                   <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatNumber(li.inProject) }}</td>
                   <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatNumber(li.upToLastEstimate) }}</td>
@@ -291,6 +456,17 @@ const sections = [
                   </td>
                   <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatMoney(li.unitPrice) }}</td>
                   <td class="px-3 py-2 text-right tabular-nums font-medium text-error">{{ formatMoney(li.totalAmount) }}</td>
+                  <!-- Deselect row -->
+                  <td class="px-2 py-2">
+                    <UButton
+                      icon="i-lucide-x"
+                      size="xs"
+                      color="neutral"
+                      variant="ghost"
+                      :aria-label="`Quitar ${li.specificationNumber}`"
+                      @click="toggleConcept(li.conceptId)"
+                    />
+                  </td>
                 </tr>
               </tbody>
               <tfoot class="border-t border-default bg-elevated/50">
@@ -301,15 +477,14 @@ const sections = [
                   <td class="px-3 py-2 text-right tabular-nums font-semibold text-highlighted">
                     {{ formatMoney(summary.conceptSummary.subtotal) }}
                   </td>
+                  <td />
                 </tr>
               </tfoot>
             </table>
           </div>
         </UCard>
-
-        <!-- 3 · Resumen (two tables) -->
+        <!-- 3 · Resumen -->
         <div id="sec-summary" class="grid scroll-mt-16 gap-4 lg:grid-cols-2">
-          <!-- Table 1 — concept rollup -->
           <UCard>
             <template #header>
               <div class="flex items-center gap-2 font-medium">
@@ -317,7 +492,6 @@ const sections = [
                 {{ F.summary.conceptsTitle }}
               </div>
             </template>
-
             <div v-if="!activeLines.length" class="text-sm text-muted">{{ S.common.empty }}</div>
             <table v-else class="w-full text-sm">
               <thead class="border-b border-default text-xs text-muted">
@@ -345,7 +519,6 @@ const sections = [
             </table>
           </UCard>
 
-          <!-- Table 2 — calculations -->
           <UCard>
             <template #header>
               <div class="flex items-center gap-2 font-medium">
@@ -353,7 +526,6 @@ const sections = [
                 {{ F.summary.calculationsTitle }}
               </div>
             </template>
-
             <dl class="divide-y divide-default text-sm">
               <div class="flex items-center justify-between py-2">
                 <dt class="text-muted">{{ F.summary.estimateAmount }}</dt>
@@ -391,7 +563,7 @@ const sections = [
           </UCard>
         </div>
 
-        <!-- 4 · Anexos -->
+        <!-- 4 · Anexos (link files + log notes) -->
         <UCard id="sec-attachments" class="scroll-mt-16">
           <template #header>
             <div class="flex items-center gap-2 font-medium">
@@ -399,13 +571,45 @@ const sections = [
               {{ F.attachments.title }}
             </div>
           </template>
-          <div class="flex items-center gap-3 rounded-lg border border-dashed border-default p-4 text-sm text-muted">
-            <UIcon name="i-lucide-info" class="size-4 shrink-0" />
-            {{ F.attachments.note }}
+
+          <p class="mb-4 text-xs text-muted">{{ F.attachments.linkHint }}</p>
+
+          <div class="grid gap-6 lg:grid-cols-2">
+            <!-- Log notes -->
+            <div>
+              <div class="mb-2 text-sm font-medium text-default">{{ F.attachments.logNotes }}</div>
+              <div v-if="!data.logNotes.length" class="text-sm text-muted">{{ F.attachments.logNotesEmpty }}</div>
+              <div v-else class="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-default p-2">
+                <UCheckbox
+                  v-for="n in data.logNotes"
+                  :key="n.id"
+                  :model-value="selectedLogNotes.includes(n.id)"
+                  :label="`#${n.folio} · ${n.title}`"
+                  :description="formatDate(n.date)"
+                  class="rounded-md px-2 py-1.5 hover:bg-elevated"
+                  @update:model-value="() => toggle(selectedLogNotes, n.id)"
+                />
+              </div>
+            </div>
+
+            <!-- Files -->
+            <div>
+              <div class="mb-2 text-sm font-medium text-default">{{ F.attachments.files }}</div>
+              <div v-if="!data.files.length" class="text-sm text-muted">{{ F.attachments.filesEmpty }}</div>
+              <div v-else class="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-default p-2">
+                <UCheckbox
+                  v-for="f in data.files"
+                  :key="f.id"
+                  :model-value="selectedFiles.includes(f.id)"
+                  :label="f.name"
+                  class="rounded-md px-2 py-1.5 hover:bg-elevated"
+                  @update:model-value="() => toggle(selectedFiles, f.id)"
+                />
+              </div>
+            </div>
           </div>
         </UCard>
 
-        <!-- Validation + sticky actions -->
         <UAlert
           v-if="submitError"
           :title="submitError"
@@ -414,6 +618,7 @@ const sections = [
           icon="i-lucide-alert-triangle"
         />
 
+        <!-- Sticky actions -->
         <div
           class="sticky bottom-0 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
         >
@@ -428,16 +633,16 @@ const sections = [
             <span v-if="!canSubmit" class="hidden text-xs text-muted sm:inline">
               {{ periodError ?? (!hasQuantities ? F.validation.noQuantities : F.validation.overContracted) }}
             </span>
-            <UButton color="neutral" variant="ghost" :to="`/contracts/${contractId}/estimates`">
+            <UButton color="neutral" variant="ghost" :to="backTo">
               {{ S.common.cancel }}
             </UButton>
             <UButton
-              icon="i-lucide-file-spreadsheet"
+              :icon="isEdit ? 'i-lucide-save' : 'i-lucide-file-spreadsheet'"
               :loading="loading"
               :disabled="!canSubmit"
               @click="onSubmit"
             >
-              {{ F.saveDraft }}
+              {{ isEdit ? F.saveChanges : F.saveDraft }}
             </UButton>
           </div>
         </div>

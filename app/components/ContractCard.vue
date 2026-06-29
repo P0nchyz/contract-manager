@@ -15,7 +15,7 @@ const status = computed(() => contractStatusDisplay[props.contract.status])
 
 <template>
   <ULink :to="`/contracts/${contract.id}`" class="block h-full">
-    <UCard class="relative h-full transition hover:ring-2 hover:ring-primary/40">
+    <UCard class="relative h-full transition hover:ring-2 hover:ring-primary/40 overflow-visible">
       <!-- alert dot -->
       <span
         v-if="hasAlert"

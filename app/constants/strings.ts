@@ -104,9 +104,30 @@ export const S = {
     schedule: 'Programa de obra',
     files: 'Archivos',
   },
+  conceptCatalog: {
+    title: 'Catálogo de conceptos',
+    empty: 'Este contrato no tiene conceptos registrados.',
+    readonlyNotice: 'El catálogo es de solo lectura. Para modificar conceptos inicia un convenio modificatorio.',
+    newAgreement: 'Nuevo convenio',
+    columns: {
+      specification: 'Especificación',
+      description: 'Descripción',
+      unit: 'Unidad',
+      unitPrice: 'P.U.',
+      contractedQty: 'Vol. contratado',
+      contractedAmount: 'Importe contratado',
+      executed: 'Vol. ejecutado',
+      executedAmount: 'Importe ejecutado',
+      remaining: 'Vol. por ejecutar',
+    },
+    search: 'Buscar concepto…',
+    total: 'Total contratado',
+  },
   estimateForm: {
     title: 'Nueva estimación',
+    editTitlePrefix: 'Editar estimación',
     saveDraft: 'Guardar borrador',
+    saveChanges: 'Guardar cambios',
     // Section anchors (one scrolling page)
     sections: {
       cover: 'Portada',
@@ -124,6 +145,15 @@ export const S = {
       periodFrom: 'Del',
       periodTo: 'Al',
       periodHint: 'Periodo que abarca la estimación',
+    },
+    // Concept selection (picker before the grid)
+    conceptPicker: {
+      label: 'Conceptos incluidos en esta estimación',
+      hint: 'Selecciona los conceptos del catálogo que aplican. Solo los marcados aparecen en la cuadrícula.',
+      addAll: 'Agregar todos',
+      clearAll: 'Quitar todos',
+      noMatch: 'Sin coincidencias',
+      selected: 'seleccionados',
     },
     // Cell-color legend
     legend: {
@@ -164,7 +194,11 @@ export const S = {
     // Attachments
     attachments: {
       title: 'Anexos',
-      note: 'Las evidencias y notas de bitácora se vinculan después de crear el borrador.',
+      linkHint: 'Vincula evidencias y notas de bitácora a esta estimación.',
+      logNotes: 'Notas de bitácora',
+      files: 'Archivos',
+      logNotesEmpty: 'No hay notas de bitácora en este contrato.',
+      filesEmpty: 'No hay archivos en este contrato.',
     },
     // Validation / empty states
     validation: {
@@ -192,11 +226,15 @@ export const S = {
       signedAt: 'Firmó',
       unsigned: 'Sin firmar',
     },
+    review: {
+      title: 'Revisión',
+    },
     attachmentsEmpty: 'Esta estimación no tiene anexos.',
     linkedLogNotes: 'Notas de bitácora vinculadas',
     evidence: 'Evidencias',
     // Workflow action buttons
     actions: {
+      edit: 'Editar',
       submit: 'Enviar a revisión',
       approve: 'Aprobar',
       returnWithNotes: 'Devolver con notas',
@@ -226,5 +264,6 @@ export const S = {
     approved: 'Aprobada',
     paid: 'Pagada',
     signed: 'Firmada',
+    reopened: 'Reabierta',
   },
 } as const
