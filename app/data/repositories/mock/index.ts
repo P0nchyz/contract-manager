@@ -58,6 +58,7 @@ export function createMockRepositories(): Repositories {
   const db = {
     corporations: clone(seed.corporations),
     users: clone(seed.users),
+    passwords: { 'U-ADMIN': 'admin', 'U-RES': 'resident', 'U-SUP': 'super', 'U-SVR': 'supervisor', 'U-FIN': 'financial' } as Record<string, string>,
     contracts: clone(seed.contracts),
     financials: clone(seed.contractFinancials),
     conceptSections: clone(seed.conceptSections),
@@ -116,10 +117,12 @@ export function createMockRepositories(): Repositories {
   return {
     // --- auth --------------------------------------------------------------
     auth: {
-      async login({ username }: Credentials) {
+      async login({ username, password }: Credentials) {
         await delay()
         const user = db.users.find((u) => u.username === username && u.active)
         if (!user) throw new RepositoryError(401, 'Credenciales inválidas', 'invalid_credentials')
+        const stored = db.passwords[user.id]
+        if (stored && password && stored !== password) throw new RepositoryError(401, 'Credenciales inválidas', 'invalid_credentials')
         currentUserId = user.id
         return { user: clone(user), accessToken: `mock.${user.id}`, refreshToken: `mockr.${user.id}` }
       },
@@ -925,8 +928,12 @@ export function createMockRepositories(): Repositories {
       },
       async create(input: CreateUserInput) {
         await delay()
-        const user: User = { id: genId('U'), fullName: input.fullName, username: input.username, email: input.email, role: input.role, corporationId: input.corporationId, active: true }
+        if (db.users.some((u) => u.username === input.username)) {
+          throw new RepositoryError(409, 'El nombre de usuario ya existe', 'username_taken')
+        }
+        const user: User = { id: genId('U'), fullName: input.fullName, username: input.username, email: input.email ?? null, role: input.role, corporationId: input.corporationId ?? null, active: true }
         db.users.push(user)
+        if (input.password) db.passwords[user.id] = input.password
         return clone(user)
       },
       async update(id, patch) {
@@ -954,7 +961,7 @@ export function createMockRepositories(): Repositories {
       },
       async create(input: CreateCorporationInput) {
         await delay()
-        const corp = { id: genId('CORP'), name: input.name, rfc: input.rfc, active: true }
+        const corp: Corporation = { id: genId('CORP'), name: input.name, rfc: input.rfc ?? null, superintendentId: input.superintendentId ?? null, active: true }
         db.corporations.push(corp)
         return clone(corp)
       },

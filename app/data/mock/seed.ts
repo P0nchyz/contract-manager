@@ -30,7 +30,7 @@ const d = (iso: string) => new Date(iso)
 
 // --- Organizations ---------------------------------------------------------
 export const corporations: Corporation[] = [
-  { id: 'CORP-001', name: 'Constructora del Valle, S.A. de C.V.', rfc: 'CVA120511AB3', active: true },
+  { id: 'CORP-001', name: 'Constructora del Valle, S.A. de C.V.', rfc: 'CVA120511AB3', superintendentId: 'U-SUP', active: true },
 ]
 
 export const users: User[] = [
@@ -284,7 +284,7 @@ export const files: FileAsset[] = [
 ]
 
 export const evidenceNotes: EvidenceNote[] = [
-  { id: 'EVN-01', contractId: 'CT-001', title: 'Condición del terreno - polígono norte', body: 'Fotografías del estado del terreno antes del inicio.', fileIds: ['FILE-10'], authorId: 'U-SUP', createdAt: d('2024-02-05') },
+  { id: 'EVN-01', contractId: 'CT-001', title: 'Condición del terreno - polígono norte', body: 'Fotografías del estado del terreno antes del inicio.', date: d('2024-02-05'), fileIds: ['FILE-10'], authorId: 'U-SUP', createdAt: d('2024-02-05') },
 ]
 
 // --- Alerts ----------------------------------------------------------------

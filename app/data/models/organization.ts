@@ -9,6 +9,7 @@ export interface Corporation {
   id: CorporationId
   name: string
   rfc: string | null // Mexican tax ID
+  superintendentId: UserId | null // assigned superintendent
   active: boolean
 }
 

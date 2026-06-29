@@ -277,6 +277,7 @@ export interface UserRepository {
 export interface CreateCorporationInput {
   name: string
   rfc: string | null
+  superintendentId: UserId | null
 }
 export interface CorporationRepository {
   list(): Promise<Corporation[]>
