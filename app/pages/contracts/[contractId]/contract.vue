@@ -61,7 +61,7 @@ const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse
         <USkeleton class="h-32 w-full rounded-lg" />
       </div>
 
-      <template v-else-if="data">
+      <div v-else-if="data" class="flex flex-col gap-6">
         <!-- General data -->
         <UCard>
           <template #header>
@@ -242,7 +242,7 @@ const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse
             </div>
           </div>
         </UCard>
-      </template>
+      </div>
     </template>
   </UDashboardPanel>
 </template>

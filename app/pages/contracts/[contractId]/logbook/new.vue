@@ -7,22 +7,24 @@ import { isRepositoryError } from '~/data/errors'
 
 definePageMeta({ requiredPermission: 'logNote:create' })
 
+const L = S.logNote
+
 const route = useRoute()
 const repos = useRepositories()
 const contractId = computed(() => route.params.contractId as string)
 
 const schema = z.object({
-  title: z.string().min(1, 'El título es requerido'),
-  date: z.string().min(1, 'La fecha es requerida'),
-  body: z.string().min(1, 'La descripción es requerida'),
+  title: z.string().min(1, L.validation.titleRequired),
+  date:  z.string().min(1, L.validation.dateRequired),
+  body:  z.string().min(1, L.validation.bodyRequired),
 })
 
 type Schema = z.output<typeof schema>
 
 const state = reactive({
   title: '',
-  date: new Date().toISOString().split('T')[0], // Defaults to today (YYYY-MM-DD)
-  body: '',
+  date:  new Date().toISOString().split('T')[0],
+  body:  '',
 })
 
 const loading = ref(false)
@@ -33,14 +35,14 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
   errorMsg.value = null
   try {
     const { title, date, body } = event.data
-    // Convert the HTML date string back to a Javascript Date object for the repository
-    await repos.logNotes.create({
+    const note = await repos.logNotes.create({
       contractId: contractId.value,
       title,
-      date: new Date(date + 'T12:00:00'), 
+      date: new Date(`${date}T12:00:00`),
       body,
     })
-    await navigateTo(`/contracts/${contractId.value}/logbook`)
+    // Navigate to the detail page — the note is locked for editing from here on.
+    await navigateTo(`/contracts/${contractId.value}/logbook/${note.id}`)
   } catch (e) {
     errorMsg.value = isRepositoryError(e) ? e.message : S.common.error
   } finally {
@@ -52,14 +54,14 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 <template>
   <UDashboardPanel id="lognote-new">
     <template #header>
-      <UDashboardNavbar :title="S.actions.newLogNote">
+      <UDashboardNavbar :title="L.newTitle">
         <template #leading>
-          <UButton 
-            icon="i-lucide-arrow-left" 
-            color="neutral" 
-            variant="ghost" 
-            :to="`/contracts/${contractId}/logbook`" 
-            :aria-label="S.common.back" 
+          <UButton
+            icon="i-lucide-arrow-left"
+            color="neutral"
+            variant="ghost"
+            :to="`/contracts/${contractId}/logbook`"
+            :aria-label="S.common.back"
           />
         </template>
       </UDashboardNavbar>
@@ -67,18 +69,36 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 
     <template #body>
       <div class="max-w-2xl">
+        <!-- Lock notice -->
+        <UAlert
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-lock"
+          :title="L.lockedNotice"
+          class="mb-4"
+        />
+
         <UCard>
           <UForm :schema="schema" :state="state" class="space-y-4" @submit="onSubmit">
-            <UFormField label="Título" name="title">
-              <UInput v-model="state.title" class="w-full" placeholder="Ej. Inicio de trazo y nivelación" />
+            <UFormField :label="L.fields.title" name="title">
+              <UInput
+                v-model="state.title"
+                class="w-full"
+                :placeholder="L.fields.titlePlaceholder"
+              />
             </UFormField>
 
-            <UFormField label="Fecha" name="date">
+            <UFormField :label="L.fields.date" name="date">
               <UInput v-model="state.date" type="date" class="w-full" />
             </UFormField>
 
-            <UFormField label="Descripción" name="body">
-              <UTextarea v-model="state.body" :rows="6" class="w-full" placeholder="Redacta la nota de bitácora aquí..." />
+            <UFormField :label="L.fields.body" name="body">
+              <UTextarea
+                v-model="state.body"
+                :rows="6"
+                class="w-full"
+                :placeholder="L.fields.bodyPlaceholder"
+              />
             </UFormField>
 
             <UAlert
@@ -89,16 +109,16 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
               icon="i-lucide-alert-triangle"
             />
 
-            <div class="flex justify-end gap-3 pt-4 border-t border-default">
-              <UButton 
-                color="neutral" 
-                variant="ghost" 
+            <div class="flex justify-end gap-3 border-t border-default pt-4">
+              <UButton
+                color="neutral"
+                variant="ghost"
                 :to="`/contracts/${contractId}/logbook`"
               >
                 {{ S.common.cancel }}
               </UButton>
               <UButton type="submit" :loading="loading" icon="i-lucide-save">
-                {{ S.common.save }}
+                {{ L.save }}
               </UButton>
             </div>
           </UForm>

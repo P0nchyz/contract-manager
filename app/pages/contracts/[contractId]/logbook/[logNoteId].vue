@@ -4,53 +4,50 @@ import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
 import type { UserId } from '~/data/models'
 
-definePageMeta({ requiredPermission: 'logNote:create' })
+definePageMeta({ requiredPermission: 'estimate:view' })
 
-const D = S.logbookDetail
+const L = S.logNote
 
 const route = useRoute()
 const repos = useRepositories()
 const { can, role } = usePermissions()
 
 const contractId = computed(() => route.params.contractId as string)
-const logNoteId = computed(() => route.params.logNoteId as string)
+const logNoteId  = computed(() => route.params.logNoteId as string)
 
 const { data, status, error, refresh } = await useAsyncData(
   () => `lognote-${logNoteId.value}`,
   async () => {
-    const note = await repos.logNotes.getById(logNoteId.value)
-    const users = await repos.users.list().catch(() => [])
+    const [note, users] = await Promise.all([
+      repos.logNotes.getById(logNoteId.value),
+      repos.users.list().catch(() => []),
+    ])
     const names: Record<string, string> = {}
     for (const u of users) names[u.id] = u.fullName
-    // Resolve attachment file metadata best-effort (may be empty list)
-    const allFiles = await repos.files.listFiles(contractId.value).catch(() => [])
-    return { note, names, allFiles }
+    return { note, names }
   },
 )
 
-const note = computed(() => data.value?.note ?? null)
-const userName = (id: UserId | null | undefined): string =>
+const note    = computed(() => data.value?.note ?? null)
+const userName = (id: UserId | null | undefined) =>
   (id && data.value?.names[id]) || (id ?? '—')
 
-const attachments = computed(() => {
-  if (!note.value || !data.value) return []
-  return data.value.allFiles.filter((f) => note.value!.attachmentFileIds.includes(f.id))
-})
-
-// --- Sign action -----------------------------------------------------------
+// --- Signing gating ---
+// A note can be signed when: unlocked, and the current user's slot is pending.
+// No separate "submit" — the note is signable immediately after creation.
 const mySlot = computed(() =>
   note.value?.signatures.find((s) => s.role === role.value) ?? null,
 )
-
 const canSign = computed(
   () =>
+    !note.value?.locked &&
     can('sign') &&
     !!mySlot.value &&
-    mySlot.value.status === 'pending' &&
-    !note.value?.locked,
+    mySlot.value.status === 'pending',
 )
 
-const busy = ref(false)
+// --- Sign action ---
+const busy        = ref(false)
 const actionError = ref<string | null>(null)
 
 async function sign() {
@@ -65,26 +62,13 @@ async function sign() {
     busy.value = false
   }
 }
-
-// --- File size helper ------------------------------------------------------
-function formatSize(bytes: number): string {
-  if (bytes < 1_000) return `${bytes} B`
-  if (bytes < 1_000_000) return `${(bytes / 1_000).toFixed(0)} KB`
-  return `${(bytes / 1_000_000).toFixed(1)} MB`
-}
-
-function fileIcon(mimeType: string): string {
-  if (mimeType.startsWith('image/')) return 'i-lucide-image'
-  if (mimeType === 'application/pdf') return 'i-lucide-file-text'
-  return 'i-lucide-file'
-}
 </script>
 
 <template>
   <UDashboardPanel id="lognote-detail">
     <template #header>
       <UDashboardNavbar
-        :title="note ? `${D.titlePrefix} ${note.folio} — ${note.title}` : S.nav.logbook"
+        :title="note ? `${L.folio} ${note.folio}` : L.title"
       >
         <template #leading>
           <UButton
@@ -93,6 +77,14 @@ function fileIcon(mimeType: string): string {
             variant="ghost"
             :to="`/contracts/${contractId}/logbook`"
             :aria-label="S.common.back"
+          />
+        </template>
+        <template #right>
+          <UBadge
+            v-if="note"
+            :label="note.locked ? L.status.locked : L.status.unlocked"
+            :color="note.locked ? 'success' : 'warning'"
+            variant="soft"
           />
         </template>
       </UDashboardNavbar>
@@ -106,158 +98,116 @@ function fileIcon(mimeType: string): string {
         icon="i-lucide-alert-triangle"
         :title="S.common.error"
         :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
-        class="mb-4"
       />
 
-      <!-- Loading skeleton -->
       <div v-else-if="status === 'pending'" class="space-y-4">
-        <USkeleton class="h-24 rounded-lg" />
-        <USkeleton class="h-40 rounded-lg" />
-        <div class="grid gap-4 lg:grid-cols-2">
-          <USkeleton class="h-48 rounded-lg" />
-          <USkeleton class="h-48 rounded-lg" />
-        </div>
+        <USkeleton class="h-36 w-full rounded-lg" />
+        <USkeleton class="h-48 w-full rounded-lg" />
       </div>
 
-      <div v-else-if="note" class="space-y-4">
+      <template v-else-if="note">
+        <!-- Locked notice -->
+        <UAlert
+          v-if="note.locked"
+          color="success"
+          variant="soft"
+          icon="i-lucide-lock"
+          :title="L.signedNotice"
+        />
 
-        <!-- Header meta card -->
-        <UCard>
-          <div class="flex flex-wrap items-start justify-between gap-4">
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <span class="text-xl font-semibold tabular-nums">Folio {{ note.folio }}</span>
-                <UBadge
-                  :label="note.locked ? D.locked : D.unlocked"
-                  :color="note.locked ? 'success' : 'warning'"
-                  :variant="note.locked ? 'soft' : 'subtle'"
-                  :icon="note.locked ? 'i-lucide-lock' : 'i-lucide-lock-open'"
-                  size="sm"
-                />
-              </div>
-              <p class="text-sm text-muted">{{ note.title }}</p>
-            </div>
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-              <dt class="text-muted">{{ D.date }}</dt>
-              <dd class="font-medium tabular-nums">{{ formatDate(note.date) }}</dd>
-              <dt class="text-muted">{{ D.author }}</dt>
-              <dd class="font-medium">{{ userName(note.authorId) }}</dd>
-            </dl>
-          </div>
-        </UCard>
-
-        <!-- Body / Descripción -->
+        <!-- Content card -->
         <UCard>
           <template #header>
             <div class="flex items-center gap-2 font-medium">
-              <UIcon name="i-lucide-notebook-text" class="size-4 text-muted" />
-              {{ D.sections.body }}
+              <UIcon name="i-lucide-notebook-pen" class="size-4 text-muted" />
+              {{ L.sections.content }}
             </div>
           </template>
-          <p class="whitespace-pre-wrap text-sm leading-relaxed">{{ note.body }}</p>
-        </UCard>
 
-        <!-- Signatures + Attachments row -->
-        <div class="grid gap-4 lg:grid-cols-2">
-
-          <!-- Signatures -->
-          <UCard>
-            <template #header>
-              <div class="flex items-center gap-2 font-medium">
-                <UIcon name="i-lucide-pen-line" class="size-4 text-muted" />
-                {{ D.sections.signatures }}
-              </div>
-            </template>
-            <ul class="divide-y divide-default">
-              <li
-                v-for="s in note.signatures"
-                :key="s.id"
-                class="flex items-center justify-between py-2.5"
-              >
-                <div class="flex items-center gap-3">
-                  <UIcon
-                    :name="s.status === 'signed' ? 'i-lucide-badge-check' : 'i-lucide-circle-dashed'"
-                    class="size-4"
-                    :class="s.status === 'signed' ? 'text-success' : 'text-muted'"
-                  />
-                  <div>
-                    <div class="text-sm font-medium text-highlighted">{{ S.roles[s.role] }}</div>
-                    <div class="text-xs text-muted">
-                      <template v-if="s.status === 'signed'">
-                        {{ D.signatures.signedAt }}: {{ userName(s.userId) }} · {{ formatDate(s.signedAt!) }}
-                      </template>
-                      <template v-else>{{ D.signatures.unsigned }}</template>
-                    </div>
-                  </div>
-                </div>
-                <UBadge
-                  :label="s.status === 'signed' ? D.signatures.signed : D.signatures.pending"
-                  :color="s.status === 'signed' ? 'success' : 'neutral'"
-                  :variant="s.status === 'signed' ? 'soft' : 'outline'"
-                  size="sm"
-                />
-              </li>
-            </ul>
-          </UCard>
+          <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-3">
+            <div>
+              <dt class="text-xs text-muted">{{ L.folio }}</dt>
+              <dd class="font-mono font-semibold text-highlighted">{{ note.folio }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-muted">{{ L.date }}</dt>
+              <dd class="text-highlighted">{{ formatDate(note.date) }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-muted">{{ L.author }}</dt>
+              <dd class="text-highlighted">{{ userName(note.authorId) }}</dd>
+            </div>
+            <div class="sm:col-span-3">
+              <dt class="text-xs text-muted">{{ L.fields.title }}</dt>
+              <dd class="font-medium text-highlighted">{{ note.title }}</dd>
+            </div>
+            <div class="sm:col-span-3">
+              <dt class="mb-1.5 text-xs text-muted">{{ L.body }}</dt>
+              <dd class="whitespace-pre-wrap rounded-lg bg-elevated/50 px-3 py-2.5 text-sm text-highlighted">{{ note.body }}</dd>
+            </div>
+          </dl>
 
           <!-- Attachments -->
-          <UCard>
-            <template #header>
-              <div class="flex items-center gap-2 font-medium">
-                <UIcon name="i-lucide-paperclip" class="size-4 text-muted" />
-                {{ D.sections.attachments }}
-              </div>
-            </template>
-
-            <p v-if="!attachments.length" class="text-sm text-muted">
-              {{ D.attachmentsEmpty }}
-            </p>
-
-            <ul v-else class="divide-y divide-default">
-              <li
-                v-for="file in attachments"
-                :key="file.id"
-                class="flex items-center gap-3 py-2.5"
-              >
-                <UIcon
-                  :name="fileIcon(file.mimeType)"
-                  class="size-4 shrink-0 text-muted"
-                />
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-sm font-medium">{{ file.name }}</p>
-                  <p class="text-xs text-muted">{{ formatSize(file.sizeBytes) }}</p>
-                </div>
-                <UButton
-                  :href="file.downloadUrl"
-                  target="_blank"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-download"
-                  size="xs"
-                  :aria-label="`Descargar ${file.name}`"
-                />
-              </li>
-            </ul>
-
-            <!-- IDs fallback if file metadata not available -->
-            <div
-              v-if="note.attachmentFileIds.length && !attachments.length"
-              class="flex flex-wrap gap-2 pt-2"
-            >
+          <div v-if="note.attachmentFileIds.length" class="mt-4 border-t border-default pt-4">
+            <div class="mb-2 text-xs font-medium text-muted">{{ L.attachments }}</div>
+            <div class="flex flex-wrap gap-2">
               <UBadge
                 v-for="id in note.attachmentFileIds"
                 :key="id"
                 :label="id"
                 color="neutral"
                 variant="soft"
+                icon="i-lucide-paperclip"
                 size="sm"
-                icon="i-lucide-file"
               />
             </div>
-          </UCard>
-        </div>
+          </div>
+        </UCard>
 
-        <!-- Action error -->
+        <!-- Signatures -->
+        <UCard>
+          <template #header>
+            <div class="flex items-center gap-2 font-medium">
+              <UIcon name="i-lucide-pen-line" class="size-4 text-muted" />
+              {{ L.sections.signatures }}
+            </div>
+          </template>
+
+          <ul class="divide-y divide-default">
+            <li
+              v-for="s in note.signatures"
+              :key="s.id"
+              class="flex items-center justify-between py-2.5"
+            >
+              <div class="flex items-center gap-3">
+                <UIcon
+                  :name="s.status === 'signed' ? 'i-lucide-badge-check' : 'i-lucide-circle-dashed'"
+                  class="size-4"
+                  :class="s.status === 'signed' ? 'text-success' : 'text-muted'"
+                />
+                <div>
+                  <div class="text-sm font-medium text-highlighted">{{ S.roles[s.role] }}</div>
+                  <div class="text-xs text-muted">
+                    <template v-if="s.status === 'signed'">
+                      {{ S.estimateDetail.signatures.signedAt }}:
+                      {{ userName(s.userId) }} · {{ formatDate(s.signedAt!) }}
+                    </template>
+                    <template v-else>{{ S.estimateDetail.signatures.unsigned }}</template>
+                  </div>
+                </div>
+              </div>
+              <UBadge
+                :label="s.status === 'signed'
+                  ? S.estimateDetail.signatures.signed
+                  : S.estimateDetail.signatures.pending"
+                :color="s.status === 'signed' ? 'success' : 'neutral'"
+                :variant="s.status === 'signed' ? 'soft' : 'outline'"
+                size="sm"
+              />
+            </li>
+          </ul>
+        </UCard>
+
         <UAlert
           v-if="actionError"
           :title="actionError"
@@ -266,23 +216,21 @@ function fileIcon(mimeType: string): string {
           icon="i-lucide-alert-triangle"
         />
 
-        <!-- Sticky sign bar -->
+        <!-- Sticky action bar — only visible when the user can sign -->
         <div
           v-if="canSign"
-          class="sticky bottom-0 -mx-4 mt-2 flex items-center justify-end gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
+          class="sticky bottom-0 -mx-4 mt-2 flex justify-end border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
         >
           <UButton
+            color="success"
             icon="i-lucide-pen-line"
-            color="primary"
-            variant="outline"
             :loading="busy"
             @click="sign"
           >
-            {{ D.actions.sign }}
+            {{ L.actions.sign }}
           </UButton>
         </div>
-
-      </div>
+      </template>
     </template>
   </UDashboardPanel>
 </template>
