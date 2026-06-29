@@ -742,6 +742,18 @@ export const S = {
       amount: 'Total a pagar',
       markPaid: 'Marcar como pagada',
     },
+    payModal: {
+      title: 'Comprobante de pago',
+      hint: 'Sube el comprobante de pago antes de confirmar. El archivo quedará en la carpeta "Comprobantes de pago".',
+      dropzone: 'Arrastra el archivo aquí o haz clic para seleccionar',
+      dropzoneActive: 'Suelta el archivo…',
+      uploading: 'Subiendo…',
+      uploaded: 'Archivo listo',
+      change: 'Cambiar archivo',
+      confirm: 'Confirmar pago',
+      skip: 'Confirmar sin comprobante',
+      optional: 'El comprobante es opcional pero se recomienda adjuntarlo.',
+    },
     breakdown: {
       noSection: 'Sin sección',
       total: 'Total contratado',

@@ -2,7 +2,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { S } from '~/constants/strings'
-import { isRepositoryError } from '~/data/errors'
 import type { BreakdownSlice } from '~/components/FinancialBreakdownChart.client.vue'
 
 definePageMeta({ requiredPermission: 'financial:view' })
@@ -105,21 +104,18 @@ const balanceToPay = computed(() =>
   Math.max(0, (fin.value?.executedAmount ?? 0) - (fin.value?.paidAmount ?? 0)),
 )
 
-// ─── Mark paid ────────────────────────────────────────────────────────────────
-const payingId = ref<string | null>(null)
-const payError = ref<string | null>(null)
+// ─── Mark paid modal ─────────────────────────────────────────────────────────
+const payModalOpen   = ref(false)
+const payingEstimate = ref<{ id: string; number: number } | null>(null)
 
-async function markPaid(estimateId: string) {
-  payingId.value = estimateId
-  payError.value = null
-  try {
-    await repos.estimates.markPaid(estimateId)
-    await refresh()
-  } catch (e) {
-    payError.value = isRepositoryError(e) ? e.message : S.common.error
-  } finally {
-    payingId.value = null
-  }
+function openPayModal(est: { id: string; number: number }) {
+  payingEstimate.value = est
+  payModalOpen.value   = true
+}
+
+async function onPaid() {
+  payModalOpen.value = false
+  await refresh()
 }
 </script>
 
@@ -338,8 +334,7 @@ async function markPaid(estimateId: string) {
                       size="xs"
                       color="success"
                       variant="soft"
-                      :loading="payingId === est.id"
-                      @click="markPaid(est.id)"
+                      @click="openPayModal({ id: est.id, number: est.number })"
                     >
                       {{ FIN.unpaid.markPaid }}
                     </UButton>
@@ -359,14 +354,7 @@ async function markPaid(estimateId: string) {
               </tfoot>
             </table>
 
-            <UAlert
-              v-if="payError"
-              :title="payError"
-              color="error"
-              variant="soft"
-              icon="i-lucide-alert-triangle"
-              class="m-4"
-            />
+
           </div>
         </UCard>
 
@@ -430,6 +418,15 @@ async function markPaid(estimateId: string) {
         </UCard>
 
       </div>
+    <!-- Pay modal -->
+    <MarkPaidModal
+      v-if="payingEstimate"
+      v-model:open="payModalOpen"
+      :estimate-id="payingEstimate.id"
+      :contract-id="contractId"
+      :estimate-number="payingEstimate.number"
+      @paid="onPaid"
+    />
     </template>
   </UDashboardPanel>
 </template>

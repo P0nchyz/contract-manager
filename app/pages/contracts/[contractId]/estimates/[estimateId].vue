@@ -95,9 +95,15 @@ async function run(fn: () => Promise<unknown>) {
 }
 
 const submit = () => run(() => repos.estimates.submit(estimateId.value))
-const markPaid = () => run(() => repos.estimates.markPaid(estimateId.value))
 // sign() calls repos.estimates.sign; the mock auto-approves once all three slots are signed.
 const sign = () => run(() => repos.estimates.sign(estimateId.value))
+
+// markPaid goes through the MarkPaidModal (upload evidence first)
+const payModalOpen = ref(false)
+async function onPaid() {
+  payModalOpen.value = false
+  await refresh()
+}
 
 // Review notes are typed inline in the viewer (no modal).
 const reviewNote = ref('')
@@ -464,7 +470,7 @@ const editLink = computed(() => ({
             >
               {{ D.actions.sign }}
             </UButton>
-            <UButton v-if="canPay" color="info" icon="i-lucide-banknote" :loading="busy" @click="markPaid">
+            <UButton v-if="canPay" color="info" icon="i-lucide-banknote" @click="payModalOpen = true">
               {{ D.actions.markPaid }}
             </UButton>
           </div>
@@ -473,6 +479,16 @@ const editLink = computed(() => ({
         <!-- (note entry is inline in the review card above) -->
 
       </div>
+
+      <!-- Pay modal -->
+      <MarkPaidModal
+        v-if="estimate && canPay"
+        v-model:open="payModalOpen"
+        :estimate-id="estimateId"
+        :contract-id="contractId"
+        :estimate-number="estimate.number"
+        @paid="onPaid"
+      />
     </template>
   </UDashboardPanel>
 </template>
