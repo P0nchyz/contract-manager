@@ -181,6 +181,7 @@ export function createMockRepositories(): Repositories {
           anticipoPercentage: input.anticipoPercentage,
           ivaRate: input.ivaRate,
           retentionPercentage: input.retentionPercentage,
+          estimatePeriodicity: input.estimatePeriodicity,
           startDate: input.startDate,
           endDate: input.endDate,
           createdById: currentUserId,
@@ -211,6 +212,12 @@ export function createMockRepositories(): Repositories {
           }
         })
         db.schedules.push({ id: genId('SCH'), contractId, items: scheduleItems })
+
+        // Seed the two predefined folders every new contract gets.
+        db.folders.push(
+          { id: genId('FD'), contractId, name: 'Documentos del contrato', parentId: null, kind: 'contract', predefined: true },
+          { id: genId('FD'), contractId, name: 'Evidencias', parentId: null, kind: 'evidence', predefined: true },
+        )
 
         return clone(contract)
       },

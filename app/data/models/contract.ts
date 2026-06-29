@@ -27,6 +27,7 @@ export interface Contract {
   anticipoPercentage: Percentage // advance payment %
   ivaRate: Percentage            // e.g. 16 — set at contract creation
   retentionPercentage: Percentage // retenciones / fondo de garantía — set at creation
+  estimatePeriodicity: 'monthly' | 'biweekly' // monthly = one per month, biweekly = twice per month
 
   startDate: Date
   endDate: Date

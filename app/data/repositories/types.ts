@@ -78,6 +78,7 @@ export interface CreateContractInput {
   anticipoPercentage: Percentage
   ivaRate: Percentage            // e.g. 16
   retentionPercentage: Percentage // e.g. 5
+  estimatePeriodicity: 'monthly' | 'biweekly'
   startDate: Date
   endDate: Date
   superintendentId: UserId | null

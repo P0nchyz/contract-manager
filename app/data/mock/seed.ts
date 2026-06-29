@@ -51,6 +51,7 @@ export const contracts: Contract[] = [
     anticipoPercentage: 20,
     ivaRate: 16,
     retentionPercentage: 5,
+    estimatePeriodicity: 'monthly' as const,
     startDate: d('2024-01-15'),
     endDate: d('2024-12-31'),
     createdById: 'U-RES',
