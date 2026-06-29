@@ -715,4 +715,36 @@ export const S = {
       uploadedAt: 'Fecha',
     },
   },
+  financial: {
+    title: 'Estado financiero',
+    sections: {
+      amounts: 'Monto contratado vs ejecutado',
+      anticipo: 'Anticipo',
+      unpaid: 'Estimaciones por pagar',
+      breakdown: 'Distribución por sección / concepto',
+    },
+    amounts: {
+      contracted: 'Monto contratado',
+      executed: 'Ejecutado (aprobado)',
+      paid: 'Pagado',
+      balance: 'Saldo por pagar',
+    },
+    anticipo: {
+      granted: 'Anticipo otorgado',
+      amortized: 'Amortizado',
+      remaining: 'Saldo de anticipo',
+      percentage: 'Porcentaje',
+    },
+    unpaid: {
+      empty: 'Sin estimaciones pendientes de pago.',
+      number: 'Estimación No.',
+      period: 'Periodo',
+      amount: 'Total a pagar',
+      markPaid: 'Marcar como pagada',
+    },
+    breakdown: {
+      noSection: 'Sin sección',
+      total: 'Total contratado',
+    },
+  },
 } as const
