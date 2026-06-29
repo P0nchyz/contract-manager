@@ -107,6 +107,7 @@ export function buildScheduleCurve(
   items: ScheduleItem[],
   periodicity: 'monthly' | 'biweekly' = 'monthly',
   conceptProgress: ConceptProgress[] = [],
+  today: Date = new Date(),
 ): SchedulePoint[] {
   if (items.length === 0) return []
 
@@ -133,33 +134,32 @@ export function buildScheduleCurve(
   // Previous period end for partial-period fractional calculation
   let prevDate = new Date(start.getTime() - 1)
 
-  return periods.map((periodEnd): SchedulePoint => {
-    // Planned: fraction of each item's programmedAmount earned during this period
+  // Find the last period boundary that has passed — actual values stop here.
+  const lastPassedPeriodIdx = periods.reduce((last, p, i) => (p <= today ? i : last), -1)
+
+  return periods.map((periodEnd, periodIdx): SchedulePoint => {
+    // Planned: linear ramp of each item's weight earned during this period window.
     let partialPlanned = 0
     let partialPhysical = 0
     let partialFinancial = 0
 
     for (const item of items) {
-      const weight = item.programmedAmount / totalAmount // weighted avg
+      const weight = item.programmedAmount / totalAmount
 
-      // Planned: linear ramp over the item's window
+      // Planned always accumulates across all periods.
       const fEnd  = fraction(item.startDate, item.endDate, periodEnd)
       const fPrev = fraction(item.startDate, item.endDate, prevDate)
       const plannedGain = (fEnd - fPrev) * weight
       partialPlanned += plannedGain
 
-      // Physical/financial: progress × weight, but only the gain since last period
-      // We distribute progress proportionally to the planned schedule
-      const physFrac = physProg[item.conceptId] ?? 0
-      const finFrac  = finProg[item.conceptId]  ?? 0
-
-      // The amount of planned work this concept was supposed to contribute through periodEnd
-      // and through prevDate — we use that as the distribution key
-      const physGain = clamp(physFrac * weight, 0, weight) - clamp(physFrac * weight * (fPrev / Math.max(fEnd, 0.0001)), 0, weight)
-      // Simpler: just take physFrac × plannedGain, which distributes actual progress
-      // proportionally to when the work was planned
-      partialPhysical  += physFrac  * plannedGain
-      partialFinancial += finFrac   * plannedGain
+      // Physical and financial only accumulate up to and including the last passed period.
+      // This prevents progress from being distributed into future periods.
+      if (periodIdx <= lastPassedPeriodIdx) {
+        const physFrac = physProg[item.conceptId] ?? 0
+        const finFrac  = finProg[item.conceptId]  ?? 0
+        partialPhysical  += physFrac * plannedGain
+        partialFinancial += finFrac  * plannedGain
+      }
     }
 
     cumPlanned   += partialPlanned
@@ -168,14 +168,16 @@ export function buildScheduleCurve(
 
     prevDate = new Date(periodEnd)
 
+    const periodHasPassed = periodIdx <= lastPassedPeriodIdx
+
     return {
       date: periodEnd,
       programmedCumulativePercentage:  round1(clamp(cumPlanned,   0, 1) * 100),
       programmedCumulativeAmount:      round(clamp(cumPlanned,     0, 1) * totalAmount),
-      actualCumulativePercentage:      round1(clamp(cumPhysical,  0, 1) * 100),
-      actualCumulativeAmount:          round(clamp(cumPhysical,    0, 1) * totalAmount),
-      financialCumulativePercentage:   round1(clamp(cumFinancial, 0, 1) * 100),
-      financialCumulativeAmount:       round(clamp(cumFinancial,   0, 1) * totalAmount),
+      actualCumulativePercentage:      periodHasPassed ? round1(clamp(cumPhysical,  0, 1) * 100) : null,
+      actualCumulativeAmount:          periodHasPassed ? round(clamp(cumPhysical,    0, 1) * totalAmount) : null,
+      financialCumulativePercentage:   periodHasPassed ? round1(clamp(cumFinancial, 0, 1) * 100) : null,
+      financialCumulativeAmount:       periodHasPassed ? round(clamp(cumFinancial,   0, 1) * totalAmount) : null,
     }
   })
 }

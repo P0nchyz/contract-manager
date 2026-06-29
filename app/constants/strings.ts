@@ -634,6 +634,7 @@ export const S = {
       today: 'Hoy',
       legend: {
         done: 'Completado',
+        executed: 'Ejecutado',
         ahead: 'Adelantado',
         on_track: 'Al corriente',
         behind: 'Rezagado',

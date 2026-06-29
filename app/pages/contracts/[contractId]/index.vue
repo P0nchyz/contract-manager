@@ -1,6 +1,6 @@
 <!-- app/pages/contracts/[contractId]/index.vue -->
 <script setup lang="ts">
-import { buildScheduleCurve } from '~/data/calc/schedule'
+import { buildScheduleCurve, type ConceptProgress } from '~/data/calc/schedule'
 import { S } from '~/constants/strings'
 import type { Permission } from '~/lib/permissions'
 
@@ -12,19 +12,49 @@ const contractId = computed(() => route.params.contractId as string)
 const { data, status, error, refresh } = await useAsyncData(
   () => `contract-dashboard-${contractId.value}`,
   async () => {
-    const [contract, financials, logNotes, estimates, schedule] = await Promise.all([
+    const [contract, financials, logNotes, estimates, schedule, concepts] = await Promise.all([
       repos.contracts.getById(contractId.value),
       repos.contracts.getFinancials(contractId.value).catch(() => null),
       repos.logNotes.listByContract(contractId.value),
       repos.estimates.listByContract(contractId.value),
       repos.schedule.getByContract(contractId.value).catch(() => null),
+      repos.concepts.listByContract(contractId.value).catch(() => []),
     ])
+
+    // Roll up physical (approved+paid) and financial (paid) progress per concept.
+    const physQty: Record<string, number> = {}
+    const finQty:  Record<string, number> = {}
+    for (const est of estimates) {
+      const isPhysical  = est.status === 'approved' || est.status === 'paid'
+      const isPaid      = est.status === 'paid'
+      for (const li of est.lineItems) {
+        if (isPhysical) physQty[li.conceptId] = (physQty[li.conceptId] ?? 0) + li.inThisEstimate
+        if (isPaid)     finQty[li.conceptId]  = (finQty[li.conceptId]  ?? 0) + li.inThisEstimate
+      }
+    }
+    const contractedQty: Record<string, number> = {}
+    for (const c of concepts) contractedQty[c.id] = c.contractedQuantity
+
+    const conceptProgress: ConceptProgress[] = (schedule?.items ?? [])
+      .filter((i) => i.conceptId)
+      .map((i) => {
+        const cid = i.conceptId!
+        const contracted = contractedQty[cid] ?? 0
+        return {
+          conceptId:         cid,
+          physicalProgress:  contracted > 0 ? Math.min((physQty[cid] ?? 0) / contracted * 100, 100) : 0,
+          financialProgress: contracted > 0 ? Math.min((finQty[cid]  ?? 0) / contracted * 100, 100) : 0,
+        }
+      })
+
     return {
       contract,
       financials,
       recentLogNotes: [...logNotes].sort((a, b) => b.folio - a.folio).slice(0, 5),
       recentEstimates: [...estimates].sort((a, b) => b.number - a.number).slice(0, 5),
-      curve: schedule ? buildScheduleCurve(schedule.items, contract.estimatePeriodicity ?? 'monthly') : [],
+      curve: schedule
+        ? buildScheduleCurve(schedule.items, contract.estimatePeriodicity ?? 'monthly', conceptProgress)
+        : [],
     }
   },
 )

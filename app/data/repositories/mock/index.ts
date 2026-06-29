@@ -243,9 +243,72 @@ export function createMockRepositories(): Repositories {
       },
       async getFinancials(id) {
         await delay()
-        const f = db.financials.find((x) => x.contractId === id)
-        if (!f) throw notFound('Información financiera')
-        return clone(f)
+        const contract = db.contracts.find((x) => x.id === id)
+        if (!contract) throw notFound('Contrato')
+
+        // Compute financials live from estimates so they stay current.
+        const estimates = db.estimates.filter((e) => e.contractId === id)
+        const concepts  = db.concepts.filter((c) => c.contractId === id)
+
+        // contractedAmount = sum of (unitPrice × contractedQuantity) across catalog
+        const contractedAmount = concepts.reduce(
+          (s, c) => s + c.unitPrice * c.contractedQuantity, 0,
+        )
+
+        // executedAmount = net total of approved + paid estimates
+        // paidAmount     = net total of paid estimates only
+        let executedAmount = 0
+        let paidAmount     = 0
+        const physQty: Record<string, number> = {}
+        const contracted: Record<string, number> = {}
+        for (const c of concepts) contracted[c.id] = c.contractedQuantity
+
+        for (const est of estimates) {
+          const isExecuted = est.status === 'approved' || est.status === 'paid'
+          const isPaid     = est.status === 'paid'
+          if (!isExecuted) continue
+          const net = est.summary?.calculations?.total ?? 0
+          executedAmount += net
+          if (isPaid) paidAmount += net
+          for (const li of est.lineItems) {
+            if (isExecuted) {
+              physQty[li.conceptId] = (physQty[li.conceptId] ?? 0) + li.inThisEstimate
+            }
+          }
+        }
+
+        // physicalProgress = weighted average of concept completion (approved+paid)
+        const totalWeight = concepts.reduce((s, c) => s + c.unitPrice * c.contractedQuantity, 0)
+        let physicalProgress = 0
+        if (totalWeight > 0) {
+          for (const c of concepts) {
+            const weight     = (c.unitPrice * c.contractedQuantity) / totalWeight
+            const done       = Math.min(physQty[c.id] ?? 0, c.contractedQuantity)
+            const completion = c.contractedQuantity > 0 ? done / c.contractedQuantity : 0
+            physicalProgress += weight * completion * 100
+          }
+        }
+
+        // financialProgress = paidAmount / contractedAmount
+        const financialProgress = contractedAmount > 0
+          ? Math.min((paidAmount / contractedAmount) * 100, 100)
+          : 0
+
+        const balancePercentage = contractedAmount > 0
+          ? Math.min((executedAmount / contractedAmount) * 100, 100)
+          : 0
+
+        return {
+          contractId: id,
+          contractedAmount,
+          executedAmount,
+          paidAmount,
+          balancePercentage: Math.round(balancePercentage * 10) / 10,
+          anticipoPercentage: contract.anticipoPercentage,
+          anticipoAmount: Math.round(contractedAmount * contract.anticipoPercentage / 100),
+          physicalProgress: Math.round(physicalProgress * 10) / 10,
+          financialProgress: Math.round(financialProgress * 10) / 10,
+        }
       },
     },
 

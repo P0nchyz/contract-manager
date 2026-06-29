@@ -26,18 +26,7 @@ const props = withDefaults(
 
 const colors = useChartColors()
 
-// Status → bar color
-const STATUS_COLORS: Record<string, string> = {
-  done:        '#22c55e',  // green — fully complete
-  ahead:       '#3b82f6',  // blue — ahead of plan
-  on_track:    '#3b82f6',  // blue — on track
-  behind:      '#ef4444',  // red — behind plan (completed portion)
-  overdue:     '#ef4444',
-  future:      '#6b7280',  // muted — not started yet
-  not_started: '#6b7280',
-}
-
-// Map a Date to a fractional month index from contractStart
+// Map a Date to a fractional month index from contractStart (origin = day 1 of start month)
 const origin = computed(() => {
   const d = new Date(props.contractStart)
   d.setDate(1)
@@ -45,14 +34,12 @@ const origin = computed(() => {
 })
 
 function toIdx(d: Date): number {
-  const o = origin.value
-  const diffMs = d.getTime() - o.getTime()
-  return diffMs / (30.44 * 86_400_000)
+  return (d.getTime() - origin.value.getTime()) / (30.44 * 86_400_000)
 }
 
 const todayIdx = computed(() => toIdx(new Date()))
 
-// Month labels across the contract period
+// X-axis month labels
 const xLabels = computed<string[]>(() => {
   const labels: string[] = []
   const cur = new Date(origin.value)
@@ -63,54 +50,129 @@ const xLabels = computed<string[]>(() => {
   return labels
 })
 
+// ─── Bar segment computation ─────────────────────────────────────────────────
+// Four floating-bar datasets layered on the same y-axis position:
+//
+//  Dataset 0 — EXECUTED (black)
+//    [start → start + actualFraction × duration]
+//    Full bar in blue if status === 'done'.
+//
+//  Dataset 1 — BEHIND DELTA (red)
+//    [actualEnd → plannedEnd]   only when actualProgress < plannedProgress
+//
+//  Dataset 2 — AHEAD DELTA (blue)
+//    [plannedEnd → actualEnd]   only when actualProgress > plannedProgress
+//
+//  Dataset 3 — REMAINDER (translucent grey)
+//    [max(actualEnd, plannedEnd) → end]   what's genuinely left to do
+
+const NONE = null as unknown as [number, number] // Chart.js skips null data points
+
 const chartData = computed<ChartData<'bar'>>(() => {
   const entries = props.entries
 
-  // Dataset 0: completed portion of each bar
-  const completedData = entries.map((e) => {
-    const totalDuration = toIdx(e.endDate) - toIdx(e.startDate)
-    if (totalDuration <= 0) return null
-    const completedFraction = (e.status.actualProgress / 100)
-    const completedDuration = totalDuration * completedFraction
-    return [toIdx(e.startDate), toIdx(e.startDate) + completedDuration] as [number, number]
-  })
+  const executedSegs:    ([number, number] | null)[] = []
+  const behindSegs:      ([number, number] | null)[] = []
+  const aheadSegs:       ([number, number] | null)[] = []
+  const remainderSegs:   ([number, number] | null)[] = []
+  const executedColors:  string[] = []
 
-  // Dataset 1: remaining / planned portion
-  const remainingData = entries.map((e) => {
-    const totalDuration = toIdx(e.endDate) - toIdx(e.startDate)
-    if (totalDuration <= 0) return null
-    const completedFraction = (e.status.actualProgress / 100)
-    const completedDuration = totalDuration * completedFraction
-    const startOfRemaining = toIdx(e.startDate) + completedDuration
-    return [startOfRemaining, toIdx(e.endDate)] as [number, number]
-  })
+  for (const e of entries) {
+    const s  = toIdx(e.startDate)
+    const en = toIdx(e.endDate)
+    const dur = en - s
+    if (dur <= 0) {
+      executedSegs.push(NONE)
+      behindSegs.push(NONE)
+      aheadSegs.push(NONE)
+      remainderSegs.push(NONE)
+      executedColors.push('transparent')
+      continue
+    }
+
+    const st = e.status
+
+    if (st.status === 'done' || st.status === 'future') {
+      // Done → solid blue full bar. Future → grey full bar.
+      const col = st.status === 'done' ? '#3b82f6' : '#6b728044'
+      executedSegs.push([s, en])
+      behindSegs.push(NONE)
+      aheadSegs.push(NONE)
+      remainderSegs.push(NONE)
+      executedColors.push(col)
+      continue
+    }
+
+    const actualFrac   = st.actualProgress   / 100
+    const plannedFrac  = st.plannedProgress  / 100
+
+    const actualEnd   = s + actualFrac  * dur
+    const plannedEnd  = s + plannedFrac * dur
+
+    // Executed portion (black)
+    if (actualFrac > 0) {
+      executedSegs.push([s, actualEnd])
+    } else {
+      executedSegs.push(NONE)
+    }
+    executedColors.push('#1f2937') // near-black
+
+    if (st.status === 'behind' || st.status === 'overdue') {
+      // Behind: red gap from actual end to where plan says we should be
+      behindSegs.push(actualEnd < plannedEnd ? [actualEnd, plannedEnd] : NONE)
+      aheadSegs.push(NONE)
+      remainderSegs.push(plannedEnd < en ? [plannedEnd, en] : NONE)
+    } else if (st.status === 'ahead') {
+      // Ahead: blue excess from planned end to actual end
+      behindSegs.push(NONE)
+      aheadSegs.push(plannedEnd < actualEnd ? [plannedEnd, actualEnd] : NONE)
+      remainderSegs.push(actualEnd < en ? [actualEnd, en] : NONE)
+    } else {
+      // on_track: no delta segment, just remainder
+      behindSegs.push(NONE)
+      aheadSegs.push(NONE)
+      remainderSegs.push(actualEnd < en ? [actualEnd, en] : NONE)
+    }
+  }
+
+  const sharedBarProps = {
+    barPercentage: 0.55,
+    categoryPercentage: 0.85,
+    borderSkipped: false,
+  } as const
 
   return {
     labels: entries.map((e) => e.label),
     datasets: [
       {
-        label: 'Completado',
-        data: completedData,
-        backgroundColor: entries.map((e) => STATUS_COLORS[e.status.status] ?? '#6b7280'),
-        borderRadius: { topLeft: 3, bottomLeft: 3, topRight: 0, bottomRight: 0 },
-        borderSkipped: false,
-        barPercentage: 0.6,
-        categoryPercentage: 0.8,
+        label: 'Ejecutado',
+        data: executedSegs,
+        backgroundColor: executedColors,
+        borderRadius: 2,
+        ...sharedBarProps,
+      },
+      {
+        label: 'Retraso',
+        data: behindSegs,
+        backgroundColor: '#ef444499', // red semi-transparent
+        borderRadius: 0,
+        ...sharedBarProps,
+      },
+      {
+        label: 'Adelanto',
+        data: aheadSegs,
+        backgroundColor: '#22c55e99', // green semi-transparent
+        borderRadius: 0,
+        ...sharedBarProps,
       },
       {
         label: 'Por ejecutar',
-        data: remainingData,
-        backgroundColor: entries.map((e) =>
-          e.status.status === 'done' ? 'transparent' : '#6b728033',
-        ),
-        borderColor: entries.map((e) =>
-          e.status.status === 'done' ? 'transparent' : '#6b728066',
-        ),
+        data: remainderSegs,
+        backgroundColor: '#6b728022',
+        borderColor: '#6b728055',
         borderWidth: 1,
-        borderRadius: { topLeft: 0, bottomLeft: 0, topRight: 3, bottomRight: 3 },
-        borderSkipped: false,
-        barPercentage: 0.6,
-        categoryPercentage: 0.8,
+        borderRadius: 2,
+        ...sharedBarProps,
       },
     ],
   }
@@ -156,11 +218,11 @@ const options = computed<ChartOptions<'bar'>>(() => ({
           if (!entry) return ''
           const s = entry.status
           const statusLabel =
-            s.status === 'done'      ? 'Completado ✓' :
-            s.status === 'ahead'     ? `Adelantado (+${Math.abs(s.delta).toFixed(1)}%)` :
-            s.status === 'behind'    ? `Retrasado (${s.delta.toFixed(1)}%)` :
-            s.status === 'overdue'   ? `Vencido (${s.delta.toFixed(1)}%)` :
-            s.status === 'on_track'  ? 'Al día' :
+            s.status === 'done'     ? 'Completado ✓' :
+            s.status === 'ahead'    ? `Adelantado (+${s.delta.toFixed(1)}%)` :
+            s.status === 'behind'   ? `Retrasado (${s.delta.toFixed(1)}%)` :
+            s.status === 'overdue'  ? `Vencido (${s.delta.toFixed(1)}%)` :
+            s.status === 'on_track' ? 'Al día' :
             'Sin iniciar'
           return [
             `Real: ${s.actualProgress.toFixed(1)}%  Planeado: ${s.plannedProgress.toFixed(1)}%`,
@@ -169,13 +231,11 @@ const options = computed<ChartOptions<'bar'>>(() => ({
         },
       },
     },
-    annotation: undefined as any, // today line drawn via afterDraw plugin below
   },
-  // Draw today vertical line via afterDraw
   animation: false,
 }))
 
-// Chart.js plugin to draw the "today" vertical line
+// Draw the "today" vertical line after the chart renders
 const todayLinePlugin = {
   id: 'todayLine',
   afterDraw(chart: any) {
@@ -188,7 +248,7 @@ const todayLinePlugin = {
     ctx.beginPath()
     ctx.setLineDash([5, 4])
     ctx.lineWidth = 1.5
-    ctx.strokeStyle = '#f59e0b' // amber — distinct from all bar colors
+    ctx.strokeStyle = '#f59e0b'
     ctx.moveTo(todayX, chartArea.top)
     ctx.lineTo(todayX, chartArea.bottom)
     ctx.stroke()

@@ -229,13 +229,16 @@ const ganttHeight = computed(() =>
               <!-- Legend -->
               <div class="flex flex-wrap items-center gap-3 text-xs text-muted">
                 <span class="flex items-center gap-1.5">
-                  <span class="size-2.5 rounded-sm bg-[#22c55e]" />{{ SP.gantt.legend.done }}
+                  <span class="size-2.5 rounded-sm bg-[#3b82f6]" />{{ SP.gantt.legend.done }}
                 </span>
                 <span class="flex items-center gap-1.5">
-                  <span class="size-2.5 rounded-sm bg-[#3b82f6]" />{{ SP.gantt.legend.ahead }}
+                  <span class="size-2.5 rounded-sm bg-[#1f2937]" />{{ SP.gantt.legend.executed }}
                 </span>
                 <span class="flex items-center gap-1.5">
-                  <span class="size-2.5 rounded-sm bg-[#ef4444]" />{{ SP.gantt.legend.behind }}
+                  <span class="size-2.5 rounded-sm bg-[#22c55e] opacity-70" />{{ SP.gantt.legend.ahead }}
+                </span>
+                <span class="flex items-center gap-1.5">
+                  <span class="size-2.5 rounded-sm bg-[#ef4444] opacity-70" />{{ SP.gantt.legend.behind }}
                 </span>
                 <span class="flex items-center gap-1.5">
                   <span class="size-2.5 rounded-sm bg-[#6b7280] opacity-30 border border-[#6b7280]" />{{ SP.gantt.legend.remaining }}
