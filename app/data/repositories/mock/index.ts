@@ -462,8 +462,28 @@ export function createMockRepositories(): Repositories {
         await delay()
         const a = db.agreements.find((x) => x.id === id)
         if (!a) throw notFound('Convenio')
+        if (a.status !== 'submitted') {
+          throw new RepositoryError(409, 'Solo se firma un convenio enviado', 'wrong_status')
+        }
         applySignature(a.signatures)
         a.history.push(event('signed'))
+        const allSigned = a.signatures.every((s) => s.status === 'signed')
+        if (allSigned) {
+          a.status = 'approved'
+          a.history.push(event('approved'))
+          // Apply time delta to contract end date.
+          // Concept/amount recalculation is handled by the backend on approval.
+          if (a.timeDeltaDays) {
+            const contract = db.contracts.find((c) => c.id === a.contractId)
+            if (contract) {
+              const newEnd = new Date(contract.endDate)
+              newEnd.setDate(newEnd.getDate() + a.timeDeltaDays)
+              contract.endDate = newEnd
+              contract.updatedAt = new Date()
+            }
+          }
+        }
+        a.updatedAt = new Date()
         return clone(a)
       },
     },
@@ -472,7 +492,30 @@ export function createMockRepositories(): Repositories {
     reception: makeCloseFlow<ReceptionStatement>(db.reception, 'Acta de recepción', () => currentUserId, pendingSignatures, event, applySignature, 'R'),
 
     // --- finiquito ---------------------------------------------------------
-    finiquito: makeCloseFlow<FiniquitoStatement>(db.finiquito, 'Finiquito', () => currentUserId, pendingSignatures, event, applySignature, 'F'),
+    finiquito: {
+      ...makeCloseFlow<FiniquitoStatement>(db.finiquito, 'Finiquito', () => currentUserId, pendingSignatures, event, applySignature, 'F'),
+      async initiate(contractId: string) {
+        await delay()
+        const rec = db.reception.find((r) => r.contractId === contractId)
+        if (!rec || rec.status !== 'approved') {
+          throw new RepositoryError(409, 'El acta de recepción debe estar aprobada antes de iniciar el finiquito', 'reception_not_approved')
+        }
+        const existing = db.finiquito.find((f) => f.contractId === contractId)
+        if (existing) throw new RepositoryError(409, 'Ya existe un finiquito para este contrato', 'already_exists')
+        const entity: FiniquitoStatement = {
+          id: genId('F'),
+          contractId,
+          status: 'draft',
+          signatures: pendingSignatures(),
+          history: [event('created')],
+          attachmentFileIds: [],
+          initiatedById: currentUserId,
+          createdAt: new Date(),
+        }
+        db.finiquito.push(entity)
+        return clone(entity)
+      },
+    },
 
     // --- schedule ----------------------------------------------------------
     schedule: {
@@ -710,8 +753,17 @@ function makeCloseFlow<T extends CloseEntity>(
     async sign(id: string) {
       await delayLocal()
       const e = find(id)
+      if (e.status !== 'submitted') {
+        throw new RepositoryError(409, `Solo se firma un ${label} enviado`, 'wrong_status')
+      }
       sign(e.signatures)
       e.history.push(event('signed'))
+      // Auto-approve once every signing slot is filled.
+      const allSigned = (e.signatures as Signature[]).every((s) => s.status === 'signed')
+      if (allSigned) {
+        e.status = 'approved'
+        e.history.push(event('approved'))
+      }
       return cloneLocal(e)
     },
   }
