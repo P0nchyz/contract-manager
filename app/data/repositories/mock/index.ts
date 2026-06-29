@@ -27,6 +27,7 @@ import type {
   WorkflowAction,
   WorkflowEvent,
 } from '../../models'
+import type { ConceptChange, NewConceptDraft } from '../../models/agreements'
 import { SIGNING_ROLES } from '../../models'
 import type {
   Repositories,
@@ -426,6 +427,8 @@ export function createMockRepositories(): Repositories {
           number: db.agreements.filter((x) => x.contractId === input.contractId).length + 1,
           kind: deriveAgreementKind(input.amountDelta, input.timeDeltaDays),
           description: input.description,
+          conceptChanges: input.conceptChanges ?? [],
+          newConcepts: input.newConcepts ?? [],
           amountDelta: input.amountDelta,
           timeDeltaDays: input.timeDeltaDays,
           status: 'draft',
@@ -443,7 +446,10 @@ export function createMockRepositories(): Repositories {
         await delay()
         const a = db.agreements.find((x) => x.id === id)
         if (!a) throw notFound('Convenio')
-        Object.assign(a, patch, { kind: deriveAgreementKind(patch.amountDelta, patch.timeDeltaDays) })
+        if (a.status !== 'draft' && a.status !== 'with_notes') {
+          throw new RepositoryError(409, 'Solo se editan convenios en borrador o con notas', 'not_editable')
+        }
+        Object.assign(a, patch, { kind: deriveAgreementKind(patch.amountDelta, patch.timeDeltaDays), updatedAt: new Date() })
         return clone(a)
       },
       async submit(id) {
@@ -471,8 +477,46 @@ export function createMockRepositories(): Repositories {
         if (allSigned) {
           a.status = 'approved'
           a.history.push(event('approved'))
+          // Apply concept changes to catalog.
+          for (const change of a.conceptChanges) {
+            const concept = db.concepts.find((c) => c.id === change.conceptId)
+            if (!concept) continue
+            if (change.contractedQuantity != null) concept.contractedQuantity = change.contractedQuantity
+            if (change.unitPrice != null) concept.unitPrice = change.unitPrice
+            // Apply schedule date overrides.
+            if (change.startDate != null || change.endDate != null) {
+              const schedule = db.schedules.find((s) => s.contractId === a.contractId)
+              if (schedule) {
+                const item = schedule.items.find((i) => i.conceptId === change.conceptId)
+                if (item) {
+                  if (change.startDate != null) item.startDate = change.startDate
+                  if (change.endDate != null) item.endDate = change.endDate
+                }
+              }
+            }
+          }
+          // Create new concepts and add schedule items for them.
+          for (const draft of a.newConcepts) {
+            const { startDate, endDate, ...conceptFields } = draft as typeof draft & { startDate?: Date; endDate?: Date }
+            const newConcept = { id: genId('CN'), contractId: a.contractId, ...conceptFields }
+            db.concepts.push(newConcept)
+            const schedule = db.schedules.find((s) => s.contractId === a.contractId)
+            if (schedule && startDate && endDate) {
+              schedule.items.push({
+                id: genId('SI'),
+                contractId: a.contractId,
+                label: draft.description,
+                conceptId: newConcept.id,
+                startDate,
+                endDate,
+                programmedPercentage: 0,
+                actualPercentage: null,
+                programmedAmount: draft.unitPrice * draft.contractedQuantity,
+                actualAmount: null,
+              })
+            }
+          }
           // Apply time delta to contract end date.
-          // Concept/amount recalculation is handled by the backend on approval.
           if (a.timeDeltaDays) {
             const contract = db.contracts.find((c) => c.id === a.contractId)
             if (contract) {
@@ -524,6 +568,17 @@ export function createMockRepositories(): Repositories {
         const s = db.schedules.find((x) => x.contractId === contractId)
         if (!s) throw notFound('Programa de obra')
         return clone(s)
+      },
+      async updateItem(itemId, patch) {
+        await delay()
+        for (const s of db.schedules) {
+          const item = s.items.find((i) => i.id === itemId)
+          if (item) {
+            Object.assign(item, patch)
+            return clone(item)
+          }
+        }
+        throw notFound('Elemento de programa')
       },
     },
 

@@ -34,7 +34,10 @@ import type {
   User,
   UserId,
   WorkSchedule,
+  ScheduleItem,
+  ScheduleItemId,
 } from '../models'
+import type { ConceptChange, NewConceptDraft } from '../models/agreements'
 
 export interface ListParams {
   page?: number
@@ -92,6 +95,7 @@ export interface CreateConceptInput {
 export interface ConceptRepository {
   listByContract(contractId: ContractId): Promise<Concept[]>
   create(contractId: ContractId, input: CreateConceptInput): Promise<Concept>
+  delete(conceptId: ConceptId): Promise<void>
 }
 
 // --- Estimates -------------------------------------------------------------
@@ -104,6 +108,8 @@ export interface CreateEstimateInput {
   periodStart: Date
   periodEnd: Date
   lineItems: EstimateLineInput[]
+  evidenceFileIds?: FileId[] // linked at creation/edit
+  linkedLogNoteIds?: LogNoteId[] // linked at creation/edit
 }
 export interface EstimateRepository {
   listByContract(contractId: ContractId, params?: ListParams): Promise<Estimate[]>
@@ -137,6 +143,10 @@ export interface LogNoteRepository {
 export interface CreateAgreementInput {
   contractId: ContractId
   description: string
+  // Per-concept changes; deltas are derived from these on save.
+  conceptChanges: ConceptChange[]
+  newConcepts: NewConceptDraft[]
+  // Aggregate deltas — computed by the form, stored on the model.
   amountDelta: Money | null
   timeDeltaDays: number | null
   attachmentFileIds?: FileId[]
@@ -169,6 +179,7 @@ export type FiniquitoRepository = CloseFlowRepository<FiniquitoStatement, Finiqu
 // --- Schedule --------------------------------------------------------------
 export interface ScheduleRepository {
   getByContract(contractId: ContractId): Promise<WorkSchedule> // S-curve derived in utils
+  updateItem(itemId: ScheduleItemId, patch: Partial<Pick<ScheduleItem, 'startDate' | 'endDate' | 'programmedAmount'>>): Promise<ScheduleItem>
 }
 
 // --- Files & evidence ------------------------------------------------------
