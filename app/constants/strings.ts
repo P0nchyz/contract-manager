@@ -317,6 +317,10 @@ export const S = {
       timeDeltaDays: 'Variación de plazo (días)',
       timeDeltaHint: 'Positivo = ampliación, negativo = reducción. Deja en blanco si no aplica.',
     },
+    validation: {
+      descriptionRequired: 'Escribe la descripción del convenio.',
+      noDelta: 'Indica al menos una variación: de monto o de plazo.',
+    },
     saveDraft: 'Guardar borrador',
     saveChanges: 'Guardar cambios',
     actions: {
@@ -383,10 +387,6 @@ export const S = {
       derivedTimeDelta: 'Variación de plazo',
       days: 'días',
       noChanges: 'Sin cambios de monto registrados.',
-    },
-    validation: {
-      descriptionRequired: 'Escribe la descripción del convenio.',
-      noChanges: 'Agrega al menos un cambio a un concepto, concepto nuevo, sección nueva o cambio de fechas.',
     },
     contractDates: {
       title: 'Cambio de fechas del contrato',
@@ -757,6 +757,44 @@ export const S = {
     breakdown: {
       noSection: 'Sin sección',
       total: 'Total contratado',
+    },
+  },
+  evidence: {
+    title: 'Evidencias',
+    new: 'Nueva evidencia',
+    empty: 'Sin evidencias registradas.',
+    fields: {
+      title: 'Título',
+      titlePlaceholder: 'Ej. Estado del terreno en zona norte',
+      date: 'Fecha de la evidencia',
+      body: 'Descripción',
+      bodyPlaceholder: 'Describe la evidencia registrada…',
+      files: 'Archivos adjuntos',
+    },
+    validation: {
+      titleRequired: 'El título es requerido.',
+      dateRequired: 'La fecha es requerida.',
+      bodyRequired: 'La descripción es requerida.',
+    },
+    upload: {
+      dropzone: 'Arrastra archivos o haz clic para adjuntar',
+      dropzoneActive: 'Suelta los archivos…',
+      uploading: 'Subiendo',
+      done: 'Listo',
+      error: 'Error al subir',
+      remove: 'Quitar',
+    },
+    save: 'Guardar evidencia',
+    columns: {
+      title: 'Título',
+      date: 'Fecha',
+      author: 'Autor',
+      files: 'Archivos',
+    },
+    detail: {
+      files: 'Archivos adjuntos',
+      noFiles: 'Sin archivos adjuntos.',
+      download: 'Descargar',
     },
   },
 } as const

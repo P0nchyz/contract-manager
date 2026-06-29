@@ -49,6 +49,7 @@ export interface EvidenceNote {
   contractId: ContractId
   title: string
   body: string
+  date: Date        // date the evidence was recorded (set by user)
   fileIds: FileId[]
   authorId: UserId
   createdAt: Date

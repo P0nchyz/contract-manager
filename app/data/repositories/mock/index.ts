@@ -865,11 +865,34 @@ export function createMockRepositories(): Repositories {
     evidence: {
       async listByContract(contractId) {
         await delay()
-        return clone(db.evidence.filter((e) => e.contractId === contractId))
+        return clone(
+          db.evidence
+            .filter((e) => e.contractId === contractId)
+            .sort((a, b) => {
+              const ta = a.date ? new Date(a.date).getTime() : 0
+              const tb = b.date ? new Date(b.date).getTime() : 0
+              return tb - ta
+            }),
+        )
+      },
+      async getById(id) {
+        await delay()
+        const note = db.evidence.find((e) => e.id === id)
+        if (!note) throw notFound('Evidencia')
+        return clone(note)
       },
       async create(input: CreateEvidenceNoteInput) {
         await delay()
-        const note = { id: genId('EVN'), contractId: input.contractId, title: input.title, body: input.body, fileIds: input.fileIds ?? [], authorId: currentUserId, createdAt: new Date() }
+        const note: EvidenceNote = {
+          id: genId('EVN'),
+          contractId: input.contractId,
+          title: input.title,
+          body: input.body,
+          date: input.date,
+          fileIds: input.fileIds ?? [],
+          authorId: currentUserId,
+          createdAt: new Date(),
+        }
         db.evidence.push(note)
         return clone(note)
       },

@@ -16,6 +16,7 @@ import type {
   Estimate,
   EstimateId,
   EvidenceNote,
+  EvidenceNoteId,
   FileAsset,
   FileId,
   FiniquitoStatement,
@@ -241,10 +242,12 @@ export interface CreateEvidenceNoteInput {
   contractId: ContractId
   title: string
   body: string
+  date: Date
   fileIds?: FileId[]
 }
 export interface EvidenceRepository {
   listByContract(contractId: ContractId): Promise<EvidenceNote[]>
+  getById(id: EvidenceNoteId): Promise<EvidenceNote>
   create(input: CreateEvidenceNoteInput): Promise<EvidenceNote>
 }
 
