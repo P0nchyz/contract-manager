@@ -24,7 +24,7 @@ const { data, status, error, refresh } = await useAsyncData(
       financials,
       recentLogNotes: [...logNotes].sort((a, b) => b.folio - a.folio).slice(0, 5),
       recentEstimates: [...estimates].sort((a, b) => b.number - a.number).slice(0, 5),
-      curve: schedule ? buildScheduleCurve(schedule.items) : [],
+      curve: schedule ? buildScheduleCurve(schedule.items, contract.estimatePeriodicity ?? 'monthly') : [],
     }
   },
 )
@@ -98,6 +98,7 @@ const quickActions = computed<QuickAction[]>(() => {
             class="lg:col-span-8"
             :points="data.curve"
             :financials="data.financials"
+            :contract-id="contractId"
           />
           <ContractLogbookWidget
             class="lg:col-span-7"

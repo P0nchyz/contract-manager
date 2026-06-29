@@ -25,10 +25,21 @@ const chartData = computed<ChartData<'line'>>(() => ({
       fill: false,
     },
     {
-      label: S.contractDashboard.actual,
+      label: S.contractDashboard.physical ?? 'Avance físico',
       data: props.points.map((p) => p.actualCumulativePercentage),
       borderColor: colors.primary,
       borderWidth: 2.5,
+      pointRadius: 0,
+      tension: 0.3,
+      spanGaps: false,
+      fill: false,
+    },
+    {
+      label: S.contractDashboard.financial ?? 'Avance financiero',
+      data: props.points.map((p) => p.financialCumulativePercentage),
+      borderColor: colors.success,
+      borderWidth: 2,
+      borderDash: [3, 3],
       pointRadius: 0,
       tension: 0.3,
       spanGaps: false,
@@ -51,10 +62,17 @@ const options = computed<ChartOptions<'line'>>(() => ({
     x: { grid: { display: false } },
   },
   plugins: {
-    legend: { display: true, position: 'bottom', labels: { boxWidth: 12, usePointStyle: true } },
+    legend: {
+      display: true,
+      position: 'bottom',
+      labels: { boxWidth: 12, usePointStyle: true },
+    },
     tooltip: {
       callbacks: {
-        label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y ?? '—'}%`,
+        label: (ctx) => {
+          const v = ctx.parsed.y
+          return `${ctx.dataset.label}: ${v == null ? '—' : `${v}%`}`
+        },
       },
     },
   },
