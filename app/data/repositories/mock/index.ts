@@ -236,10 +236,11 @@ export function createMockRepositories(): Repositories {
         })
         db.schedules.push({ id: genId('SCH'), contractId, items: scheduleItems })
 
-        // Seed the two predefined folders every new contract gets.
+        // Seed the three predefined folders every new contract gets.
         db.folders.push(
-          { id: genId('FD'), contractId, name: 'Documentos del contrato', parentId: null, kind: 'contract', predefined: true },
-          { id: genId('FD'), contractId, name: 'Evidencias', parentId: null, kind: 'evidence', predefined: true },
+          { id: genId('FD'), contractId, name: 'Documentos del contrato', parentId: null, kind: 'contract',  predefined: true },
+          { id: genId('FD'), contractId, name: 'Evidencias',              parentId: null, kind: 'evidence',  predefined: true },
+          { id: genId('FD'), contractId, name: 'Comprobantes de pago',    parentId: null, kind: 'payments',  predefined: true },
         )
 
         return clone(contract)
@@ -798,6 +799,29 @@ export function createMockRepositories(): Repositories {
         db.folders.push(folder)
         return clone(folder)
       },
+      async renameFolder(folderId, name) {
+        await delay()
+        const f = db.folders.find((x) => x.id === folderId)
+        if (!f) throw notFound('Carpeta')
+        if (f.predefined) throw new RepositoryError(403, 'No se puede renombrar una carpeta predefinida', 'predefined')
+        f.name = name
+        return clone(f)
+      },
+      async deleteFolder(folderId) {
+        await delay()
+        const f = db.folders.find((x) => x.id === folderId)
+        if (!f) throw notFound('Carpeta')
+        if (f.predefined) throw new RepositoryError(403, 'No se puede eliminar una carpeta predefinida', 'predefined')
+        // Recursively collect all descendant folder ids
+        const toDelete = new Set<string>()
+        const collect = (id: string) => {
+          toDelete.add(id)
+          db.folders.filter((x) => x.parentId === id).forEach((x) => collect(x.id))
+        }
+        collect(folderId)
+        db.folders = db.folders.filter((x) => !toDelete.has(x.id))
+        db.files   = db.files.filter((x) => !toDelete.has(x.folderId))
+      },
       async upload(input: UploadFileInput, onProgress?: UploadProgress) {
         for (let p = 0.2; p < 1; p += 0.2) {
           await delay(80)
@@ -812,7 +836,7 @@ export function createMockRepositories(): Repositories {
           sizeBytes: input.file.size,
           uploadedById: currentUserId,
           uploadedAt: new Date(),
-          downloadUrl: '#',
+          downloadUrl: '#', // replaced by getDownloadUrl in production
         }
         db.files.push(file)
         onProgress?.(1)
@@ -820,13 +844,22 @@ export function createMockRepositories(): Repositories {
       },
       async remove(fileId) {
         await delay()
-        db.files = db.files.filter((f) => f.id !== fileId)
+        const f = db.files.find((x) => x.id === fileId)
+        if (!f) throw notFound('Archivo')
+        if (f.uploadedById !== currentUserId) {
+          throw new RepositoryError(403, 'Solo puedes eliminar archivos que tú subiste', 'forbidden')
+        }
+        db.files = db.files.filter((x) => x.id !== fileId)
       },
       async getDownloadUrl(fileId) {
         await delay()
         const f = db.files.find((x) => x.id === fileId)
         if (!f) throw notFound('Archivo')
-        return f.downloadUrl
+        // Simulate a download by creating a Blob with placeholder content.
+        // In production this would return a presigned URL.
+        const content = `[Mock file: ${f.name} — ${f.sizeBytes} bytes]`
+        const blob = new Blob([content], { type: f.mimeType || 'application/octet-stream' })
+        return URL.createObjectURL(blob)
       },
     },
     evidence: {

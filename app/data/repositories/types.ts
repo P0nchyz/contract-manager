@@ -231,6 +231,8 @@ export interface FileRepository {
   listFolders(contractId: ContractId): Promise<Folder[]>
   listFiles(contractId: ContractId, folderId?: FolderId): Promise<FileAsset[]>
   createFolder(input: CreateFolderInput): Promise<Folder>
+  renameFolder(folderId: FolderId, name: string): Promise<Folder>
+  deleteFolder(folderId: FolderId): Promise<void>
   upload(input: UploadFileInput, onProgress?: UploadProgress): Promise<FileAsset>
   remove(fileId: FileId): Promise<void>
   getDownloadUrl(fileId: FileId): Promise<string>

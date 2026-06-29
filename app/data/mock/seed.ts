@@ -274,6 +274,7 @@ export const schedules: WorkSchedule[] = [
 export const folders: Folder[] = [
   { id: 'FD-CONTRACT', contractId: 'CT-001', name: 'Documentos del contrato', parentId: null, kind: 'contract', predefined: true },
   { id: 'FD-EVIDENCE', contractId: 'CT-001', name: 'Evidencias', parentId: null, kind: 'evidence', predefined: true },
+  { id: 'FD-PAYMENTS', contractId: 'CT-001', name: 'Comprobantes de pago', parentId: null, kind: 'payments', predefined: true },
   { id: 'FD-LAB', contractId: 'CT-001', name: 'Análisis de laboratorio', parentId: null, kind: 'custom', predefined: false },
 ]
 

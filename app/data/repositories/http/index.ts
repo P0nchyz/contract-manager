@@ -75,6 +75,7 @@ export function createHttpRepositories(http: HttpClient): Repositories {
     concepts: {
       listByContract: (id) => http.get<Concept[]>(`/contracts/${id}/concepts`), // TODO(map)
       create: (id, input: CreateConceptInput) => http.post<Concept>(`/contracts/${id}/concepts`, input), // TODO(map)
+      delete: (id) => http.delete<void>(`/concepts/${id}`), // TODO(map)
     },
     estimates: {
       listByContract: (id, p?: ListParams) => http.get<Estimate[]>(`/contracts/${id}/estimates`, { query: p as never }), // TODO(map)
@@ -122,6 +123,8 @@ export function createHttpRepositories(http: HttpClient): Repositories {
         // TODO: progress needs XHR or a streaming body; fetch can't report it.
         return http.upload<FileAsset>('/files', form) // TODO(map)
       },
+      renameFolder: (id, name) => http.patch<Folder>(`/folders/${id}`, { name }), // TODO(map)
+      deleteFolder: (id) => http.delete<void>(`/folders/${id}`), // TODO(map)
       remove: (id) => http.delete<void>(`/files/${id}`),
       getDownloadUrl: async (id) => (await http.get<{ url: string }>(`/files/${id}/download-url`)).url,
     },
