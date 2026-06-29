@@ -22,7 +22,8 @@ const toInputDate = (d: Date | string | undefined) =>
 const { data, status, error, refresh } = await useAsyncData(
   () => `agreement-form-${contractId.value}-${editId.value ?? 'new'}`,
   async () => {
-    const [concepts, schedule, editing] = await Promise.all([
+    const [sections, concepts, schedule, editing] = await Promise.all([
+      repos.concepts.listSectionsByContract(contractId.value),
       repos.concepts.listByContract(contractId.value),
       repos.schedule.getByContract(contractId.value).catch(() => null),
       editId.value ? repos.agreements.getById(editId.value).catch(() => null) : Promise.resolve(null),
@@ -34,7 +35,7 @@ const { data, status, error, refresh } = await useAsyncData(
         if (item.conceptId) scheduleByConceptId[item.conceptId] = item
       }
     }
-    return { concepts, scheduleByConceptId, editing }
+    return { sections, concepts, groups: groupConceptsBySections(sections, concepts), scheduleByConceptId, editing }
   },
 )
 
@@ -80,13 +81,16 @@ watchEffect(() => {
 // ─── Concept picker ──────────────────────────────────────────────────────────
 const pickerSearch = ref('')
 const alreadyAdded = computed(() => new Set(conceptChanges.value.map((c) => c.conceptId)))
-const filteredCatalog = computed(() => {
+const pickerGroups = computed(() => {
   const q = pickerSearch.value.trim().toLowerCase()
-  return (data.value?.concepts ?? []).filter(
-    (c) =>
-      !alreadyAdded.value.has(c.id) &&
-      (!q || c.specificationNumber.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)),
-  )
+  return (data.value?.groups ?? []).map((g) => ({
+    ...g,
+    concepts: g.concepts.filter(
+      (c) =>
+        !alreadyAdded.value.has(c.id) &&
+        (!q || c.specificationNumber.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)),
+    ),
+  })).filter((g) => g.concepts.length > 0)
 })
 
 function addConceptChange(conceptId: ConceptId) {
@@ -97,7 +101,6 @@ function addConceptChange(conceptId: ConceptId) {
     _newStart: '',
     _newEnd: '',
   })
-  pickerSearch.value = ''
 }
 
 function removeConceptChange(idx: number) {
@@ -111,6 +114,7 @@ function addNewConcept() {
     unit: '',
     unitPrice: 0,
     contractedQuantity: 0,
+    sectionId: null,
     _qtyRaw: '',
     _priceRaw: '',
     _start: '',
@@ -301,36 +305,39 @@ async function onSave() {
             </div>
           </template>
 
-          <!-- Picker -->
+          <!-- Grouped picker — always visible, search to filter -->
           <div class="border-b border-default px-4 py-3">
             <p class="mb-2 text-xs text-muted">{{ AG.conceptChanges.hint }}</p>
-            <div class="flex flex-wrap items-center gap-2">
-              <UInput
-                v-model="pickerSearch"
-                :placeholder="S.conceptCatalog.search"
-                icon="i-lucide-search"
-                class="w-60"
-              />
-            </div>
-            <div
-              v-if="pickerSearch.trim()"
-              class="mt-1 max-h-40 overflow-y-auto rounded-lg border border-default bg-default shadow-sm"
-            >
-              <div
-                v-for="c in filteredCatalog"
-                :key="c.id"
-                class="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-elevated"
-                @click="addConceptChange(c.id)"
-              >
-                <UIcon name="i-lucide-plus" class="size-3.5 shrink-0 text-muted" />
-                <span class="font-mono text-xs text-muted">{{ c.specificationNumber }}</span>
-                <span class="min-w-0 truncate text-sm text-highlighted">{{ c.description }}</span>
-              </div>
-              <div
-                v-if="filteredCatalog.length === 0"
-                class="px-3 py-2 text-sm text-muted"
-              >
-                {{ S.conceptCatalog.search }}…
+            <UInput
+              v-model="pickerSearch"
+              :placeholder="S.conceptCatalog.search"
+              icon="i-lucide-search"
+              class="mb-2 w-60"
+            />
+            <div class="max-h-64 overflow-y-auto rounded-lg border border-default">
+              <template v-for="group in pickerGroups" :key="group.section?.id ?? 'no-section'">
+                <div class="sticky top-0 flex items-center gap-2 border-b border-default bg-elevated px-3 py-1.5">
+                  <span class="font-mono text-xs font-semibold text-muted">{{ group.section?.specificationNumber }}</span>
+                  <span class="text-xs font-semibold text-default">{{ group.section?.description ?? S.conceptSections.noSection }}</span>
+                  <span v-if="group.section" class="ml-auto text-xs text-muted">
+                    {{ formatDate(group.section.startDate) }} – {{ formatDate(group.section.endDate) }}
+                  </span>
+                </div>
+                <div
+                  v-for="c in group.concepts"
+                  :key="c.id"
+                  class="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-elevated/60 transition-colors"
+                  @click="addConceptChange(c.id)"
+                >
+                  <UIcon name="i-lucide-plus" class="size-3.5 shrink-0 text-primary" />
+                  <span class="font-mono text-xs text-muted w-16 shrink-0">{{ c.specificationNumber }}</span>
+                  <span class="min-w-0 flex-1 truncate text-sm text-highlighted">{{ c.description }}</span>
+                  <span class="shrink-0 text-xs text-muted">{{ c.unit }}</span>
+                  <span class="shrink-0 tabular-nums text-xs text-muted">{{ formatMoney(c.unitPrice) }}</span>
+                </div>
+              </template>
+              <div v-if="pickerGroups.length === 0" class="px-3 py-4 text-center text-sm text-muted">
+                {{ F.conceptPicker?.noMatch ?? 'Sin coincidencias' }}
               </div>
             </div>
           </div>
@@ -463,6 +470,7 @@ async function onSave() {
                   <th class="px-3 py-2 text-right font-medium text-success">{{ AG.newConcepts.columns.unitPrice }}</th>
                   <th class="px-3 py-2 text-center font-medium">{{ AG.newConcepts.columns.scheduleStart }}</th>
                   <th class="px-3 py-2 text-center font-medium">{{ AG.newConcepts.columns.scheduleEnd }}</th>
+                  <th class="px-3 py-2 text-left font-medium">Sección</th>
                   <th class="px-2 py-2" />
                 </tr>
               </thead>
@@ -519,6 +527,16 @@ async function onSave() {
                   </td>
                   <td class="px-3 py-2">
                     <UInput v-model="nc._end" type="date" class="w-36 [&_input]:text-success" />
+                  </td>
+                  <td class="px-3 py-2">
+                    <USelect
+                      v-model="nc.sectionId"
+                      :items="[
+                        { label: '— Sin sección —', value: null },
+                        ...(data?.sections ?? []).map(s => ({ label: `${s.specificationNumber} ${s.description}`, value: s.id }))
+                      ]"
+                      class="w-44"
+                    />
                   </td>
                   <td class="px-2 py-2">
                     <UButton

@@ -10,6 +10,7 @@
 import type {
   Alert,
   Concept,
+  ConceptSection,
   Contract,
   ContractFinancials,
   Corporation,
@@ -80,12 +81,18 @@ export const contractFinancials: ContractFinancials[] = [
 ]
 
 // --- Concept catalog (unitPrice in cents) ----------------------------------
+export const conceptSections: ConceptSection[] = [
+  { id: 'CS-01' as ConceptSection['id'], contractId: 'CT-001', specificationNumber: 'A', description: 'Trabajos topográficos y modelado', startDate: d('2024-01-15'), endDate: d('2024-04-30'), order: 0 },
+  { id: 'CS-02' as ConceptSection['id'], contractId: 'CT-001', specificationNumber: 'B', description: 'Implementación BIM y coordinación', startDate: d('2024-03-01'), endDate: d('2024-10-31'), order: 1 },
+  { id: 'CS-03' as ConceptSection['id'], contractId: 'CT-001', specificationNumber: 'C', description: 'Capacitación y entrega', startDate: d('2024-09-01'), endDate: d('2024-12-31'), order: 2 },
+]
+
 export const concepts: Concept[] = [
-  { id: 'CN-01', contractId: 'CT-001', specificationNumber: 'E-101', description: 'Levantamiento topográfico con estación total', unit: 'ha', unitPrice: 1_850_000, contractedQuantity: 40 },
-  { id: 'CN-02', contractId: 'CT-001', specificationNumber: 'E-205', description: 'Modelado BIM de estructura principal', unit: 'm2', unitPrice: 95_000, contractedQuantity: 12_000 },
-  { id: 'CN-03', contractId: 'CT-001', specificationNumber: 'E-210', description: 'Modelado BIM de instalaciones MEP', unit: 'm2', unitPrice: 120_000, contractedQuantity: 12_000 },
-  { id: 'CN-04', contractId: 'CT-001', specificationNumber: 'E-330', description: 'Detección de interferencias (clash detection)', unit: 'lote', unitPrice: 48_000_000, contractedQuantity: 1 },
-  { id: 'CN-05', contractId: 'CT-001', specificationNumber: 'E-410', description: 'Capacitación al personal en plataforma', unit: 'curso', unitPrice: 9_500_000, contractedQuantity: 6 },
+  { id: 'CN-01', contractId: 'CT-001', sectionId: 'CS-01' as ConceptSection['id'], specificationNumber: 'E-101', description: 'Levantamiento topográfico con estación total', unit: 'ha', unitPrice: 1_850_000, contractedQuantity: 40 },
+  { id: 'CN-02', contractId: 'CT-001', sectionId: 'CS-02' as ConceptSection['id'], specificationNumber: 'E-205', description: 'Modelado BIM de estructura principal', unit: 'm2', unitPrice: 95_000, contractedQuantity: 12_000 },
+  { id: 'CN-03', contractId: 'CT-001', sectionId: 'CS-02' as ConceptSection['id'], specificationNumber: 'E-210', description: 'Modelado BIM de instalaciones MEP', unit: 'm2', unitPrice: 120_000, contractedQuantity: 12_000 },
+  { id: 'CN-04', contractId: 'CT-001', sectionId: 'CS-02' as ConceptSection['id'], specificationNumber: 'E-330', description: 'Detección de interferencias (clash detection)', unit: 'lote', unitPrice: 48_000_000, contractedQuantity: 1 },
+  { id: 'CN-05', contractId: 'CT-001', sectionId: 'CS-03' as ConceptSection['id'], specificationNumber: 'E-410', description: 'Capacitación al personal en plataforma', unit: 'curso', unitPrice: 9_500_000, contractedQuantity: 6 },
 ]
 
 // --- Estimates -------------------------------------------------------------

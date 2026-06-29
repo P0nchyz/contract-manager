@@ -1,13 +1,29 @@
 // app/data/models/concept.ts
-import type { ConceptId, ContractId, Money } from './common'
+import type { ConceptId, ConceptSectionId, ContractId, Money } from './common'
 
 /**
  * A single concept in a contract's Concept Catalog (catálogo de conceptos).
  * Estimate line items draw from these. Scale: dozens to hundreds per contract.
  */
+/**
+ * A grouping of related concepts within a contract catalog.
+ * Every section has its own specification number, description, and a mandatory
+ * execution period. Concepts in the section must fall within that period.
+ */
+export interface ConceptSection {
+  id: ConceptSectionId
+  contractId: ContractId
+  specificationNumber: string // e.g. "A", "01", "CAP-1"
+  description: string         // section title, e.g. "Trabajos preliminares"
+  startDate: Date             // all concepts in this section must start on or after this
+  endDate: Date               // all concepts in this section must end on or before this
+  order: number               // display order
+}
+
 export interface Concept {
   id: ConceptId
   contractId: ContractId
+  sectionId: ConceptSectionId | null // null = no section
   specificationNumber: string // "especificación" — defined per concept in catalog
   description: string
   unit: string // e.g. m2, m3, pza, lote

@@ -19,6 +19,7 @@ export type UserId = Brand<string, 'UserId'>
 export type CorporationId = Brand<string, 'CorporationId'>
 export type ContractId = Brand<string, 'ContractId'>
 export type ConceptId = Brand<string, 'ConceptId'>
+export type ConceptSectionId = Brand<string, 'ConceptSectionId'>
 export type EstimateId = Brand<string, 'EstimateId'>
 export type LogNoteId = Brand<string, 'LogNoteId'>
 export type AgreementId = Brand<string, 'AgreementId'>
@@ -89,6 +90,7 @@ export type WorkflowAction =
   | 'approved'
   | 'paid'
   | 'signed'
+  | 'reopened' // a returned/rejected item edited back into draft
 
 export interface WorkflowEvent {
   id: string

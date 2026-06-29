@@ -64,12 +64,57 @@ const corpName = computed(() =>
 )
 const contractorCorporationId = computed(() => selectedSup.value?.corporationId ?? null)
 
+// ─── Form: section 3.5 — catalog sections ────────────────────────────────────
+import type { CreateConceptSectionInput } from '~/data/repositories/types'
+
+type SectionDraft = CreateConceptSectionInput & { _startRaw: string; _endRaw: string }
+const catalogSections = ref<SectionDraft[]>([])
+
+function addSection() {
+  catalogSections.value.push({
+    specificationNumber: '',
+    description: '',
+    startDate: new Date(),
+    endDate: new Date(),
+    order: catalogSections.value.length,
+    _startRaw: '',
+    _endRaw: '',
+  })
+}
+function removeSection(idx: number) {
+  const removed = catalogSections.value[idx]
+  catalogSections.value.splice(idx, 1)
+  // Re-order
+  catalogSections.value.forEach((s, i) => { s.order = i })
+  // Unassign concepts that were in this section
+  concepts.value.forEach((c) => { if ((c as any)._sectionIdx === idx) (c as any)._sectionIdx = null })
+}
+
+const resolvedSections = computed<CreateConceptSectionInput[]>(() =>
+  catalogSections.value.map((s, i) => ({
+    specificationNumber: s.specificationNumber.trim(),
+    description: s.description.trim(),
+    startDate: s._startRaw ? new Date(`${s._startRaw}T12:00:00`) : new Date(),
+    endDate:   s._endRaw   ? new Date(`${s._endRaw}T12:00:00`)   : new Date(),
+    order: i,
+  })),
+)
+
+const sectionErrors = computed(() =>
+  catalogSections.value.map((s) => ({
+    spec:  s.specificationNumber.trim() ? '' : S.conceptSections.validation.specRequired,
+    desc:  s.description.trim()         ? '' : S.conceptSections.validation.descRequired,
+    dates: (!s._startRaw || !s._endRaw) ? S.conceptSections.validation.datesRequired
+           : s._startRaw >= s._endRaw   ? S.conceptSections.validation.endBeforeStart : '',
+  })),
+)
+
 // ─── Form: section 4 — concepts ──────────────────────────────────────────────
-type ConceptDraft = CreateConceptInput & { _qtyRaw: string; _priceRaw: string }
+type ConceptDraft = CreateConceptInput & { _qtyRaw: string; _priceRaw: string; _sectionIdx: number | null }
 const concepts = ref<ConceptDraft[]>([])
 
 function addConcept() {
-  concepts.value.push({ specificationNumber: '', description: '', unit: '', contractedQuantity: 0, unitPrice: 0, _qtyRaw: '', _priceRaw: '' })
+  concepts.value.push({ specificationNumber: '', description: '', unit: '', contractedQuantity: 0, unitPrice: 0, _qtyRaw: '', _priceRaw: '', _sectionIdx: null, sectionId: null })
 }
 function removeConcept(idx: number) {
   concepts.value.splice(idx, 1)
@@ -85,6 +130,8 @@ const resolvedConcepts = computed<CreateConceptInput[]>(() =>
     unit:                c.unit.trim(),
     contractedQuantity:  parseFloat(c._qtyRaw) || 0,
     unitPrice:           Math.round((parseFloat(c._priceRaw) || 0) * 100),
+    // sectionId is resolved by the mock from the index in initialSections
+    sectionId:           null, // server resolves after creating sections
   })),
 )
 const totalAmount = computed(() =>
@@ -181,6 +228,7 @@ async function onSubmit() {
       supervisorId:     supervisorId.value     as string,
       financialId:      financialId.value,
       contractorCorporationId: contractorCorporationId.value,
+      initialSections: resolvedSections.value,
       initialConcepts: resolvedConcepts.value,
       scheduleItems: scheduleItems.value.map((s) => ({
         conceptIndex: s.conceptIndex,
@@ -264,11 +312,12 @@ function formatBytes(n: number) {
 }
 
 const sections = [
-  { id: 'sec-general',  label: F.sections.general },
-  { id: 'sec-rates',    label: F.sections.rates },
-  { id: 'sec-parties',  label: F.sections.parties },
-  { id: 'sec-concepts', label: F.sections.concepts },
-  { id: 'sec-schedule', label: F.sections.schedule },
+  { id: 'sec-general',   label: F.sections.general },
+  { id: 'sec-rates',     label: F.sections.rates },
+  { id: 'sec-parties',   label: F.sections.parties },
+  { id: 'sec-cat-secs',  label: 'Secciones' },
+  { id: 'sec-concepts',  label: F.sections.concepts },
+  { id: 'sec-schedule',  label: F.sections.schedule },
 ]
 </script>
 
@@ -434,6 +483,43 @@ const sections = [
           </div>
         </UCard>
 
+        <!-- ③.5 Secciones del catálogo -->
+        <UCard id="sec-cat-secs" class="scroll-mt-16" :ui="{ body: 'p-0 sm:p-0' }">
+          <template #header>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 font-medium">
+                <UIcon name="i-lucide-layers" class="size-4 text-muted" />
+                {{ S.conceptSections.addSection }} ({{ catalogSections.length }})
+              </div>
+              <UButton size="sm" icon="i-lucide-plus" color="neutral" variant="outline" @click="addSection">
+                {{ S.conceptSections.addSection }}
+              </UButton>
+            </div>
+          </template>
+          <div v-if="!catalogSections.length" class="px-4 py-6 text-sm text-muted">
+            Las secciones son opcionales. Si las agregas, los conceptos quedarán agrupados.
+          </div>
+          <div v-else class="divide-y divide-default">
+            <div v-for="(sec, idx) in catalogSections" :key="idx" class="grid gap-3 px-4 py-3 sm:grid-cols-2 lg:grid-cols-5">
+              <UFormField :label="S.conceptSections.specificationNumber" :error="sectionErrors[idx]?.spec || undefined">
+                <UInput v-model="sec.specificationNumber" class="w-full" placeholder="A" />
+              </UFormField>
+              <UFormField :label="S.conceptSections.description" :error="sectionErrors[idx]?.desc || undefined" class="lg:col-span-2">
+                <UInput v-model="sec.description" class="w-full" placeholder="Trabajos preliminares" />
+              </UFormField>
+              <UFormField :label="S.conceptSections.from" :error="sectionErrors[idx]?.dates || undefined">
+                <UInput v-model="sec._startRaw" type="date" :min="startDate" :max="endDate" class="w-full" />
+              </UFormField>
+              <div class="flex items-end gap-2">
+                <UFormField :label="S.conceptSections.to" class="flex-1">
+                  <UInput v-model="sec._endRaw" type="date" :min="sec._startRaw || startDate" :max="endDate" class="w-full" />
+                </UFormField>
+                <UButton icon="i-lucide-x" size="sm" color="neutral" variant="ghost" class="mb-0.5" @click="removeSection(idx)" />
+              </div>
+            </div>
+          </div>
+        </UCard>
+
         <!-- ④ Catálogo de conceptos -->
         <UCard id="sec-concepts" class="scroll-mt-16" :ui="{ body: 'p-0 sm:p-0' }">
           <template #header>
@@ -461,6 +547,7 @@ const sections = [
                   <th class="px-3 py-2 text-right font-medium">{{ F.concepts.columns.qty }}</th>
                   <th class="px-3 py-2 text-right font-medium">{{ F.concepts.columns.unitPrice }}</th>
                   <th class="px-3 py-2 text-right font-medium">{{ F.concepts.columns.amount }}</th>
+                  <th v-if="catalogSections.length" class="px-3 py-2 text-left font-medium">Sección</th>
                   <th class="px-2 py-2" />
                 </tr>
               </thead>
@@ -490,6 +577,16 @@ const sections = [
                   </td>
                   <td class="px-3 py-2 text-right tabular-nums text-muted">
                     {{ formatMoney(Math.round((parseFloat(c._priceRaw) || 0) * 100) * (parseFloat(c._qtyRaw) || 0)) }}
+                  </td>
+                  <td v-if="catalogSections.length" class="px-3 py-2">
+                    <USelect
+                      v-model="c._sectionIdx"
+                      :items="[
+                        { label: '— Sin sección —', value: null },
+                        ...catalogSections.map((s, i) => ({ label: `${s.specificationNumber || i+1} ${s.description}`, value: i }))
+                      ]"
+                      class="w-40"
+                    />
                   </td>
                   <td class="px-2 py-2">
                     <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" @click="removeConcept(idx)" />

@@ -542,4 +542,23 @@ export const S = {
     submit: 'Crear contrato',
     submitting: 'Creando…',
   },
+  conceptSections: {
+    sectionHeader: 'Sección',
+    noSection: 'Sin sección',
+    subtotal: 'Subtotal sección',
+    addSection: 'Agregar sección',
+    removeSection: 'Quitar sección',
+    specificationNumber: 'Especificación de sección',
+    description: 'Descripción de la sección',
+    period: 'Periodo de la sección',
+    from: 'Del',
+    to: 'Al',
+    validation: {
+      specRequired: 'Especificación requerida',
+      descRequired: 'Descripción requerida',
+      datesRequired: 'El periodo de la sección es requerido',
+      endBeforeStart: 'La fecha de término debe ser posterior al inicio',
+      conceptOutOfRange: 'Hay conceptos fuera del periodo de la sección',
+    },
+  },
 } as const

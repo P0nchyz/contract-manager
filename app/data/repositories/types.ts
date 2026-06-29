@@ -36,6 +36,8 @@ import type {
   WorkSchedule,
   ScheduleItem,
   ScheduleItemId,
+  ConceptSection,
+  ConceptSectionId,
 } from '../models'
 import type { ConceptChange, NewConceptDraft } from '../models/agreements'
 
@@ -85,6 +87,7 @@ export interface CreateContractInput {
   supervisorId: UserId | null
   financialId: UserId | null
   contractorCorporationId: CorporationId | null
+  initialSections: CreateConceptSectionInput[]
   initialConcepts: CreateConceptInput[]
   scheduleItems: InitialScheduleItem[]
 }
@@ -98,16 +101,27 @@ export interface ContractRepository {
 }
 
 // --- Concept catalog -------------------------------------------------------
+export interface CreateConceptSectionInput {
+  specificationNumber: string
+  description: string
+  startDate: Date
+  endDate: Date
+  order: number
+}
+
 export interface CreateConceptInput {
   specificationNumber: string
   description: string
   unit: string
   unitPrice: Money
   contractedQuantity: number
+  sectionId?: ConceptSectionId | null
 }
 export interface ConceptRepository {
   listByContract(contractId: ContractId): Promise<Concept[]>
+  listSectionsByContract(contractId: ContractId): Promise<ConceptSection[]>
   create(contractId: ContractId, input: CreateConceptInput): Promise<Concept>
+  createSection(contractId: ContractId, input: CreateConceptSectionInput): Promise<ConceptSection>
   delete(conceptId: ConceptId): Promise<void>
 }
 

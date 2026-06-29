@@ -23,8 +23,9 @@ const toInputDate = (d: Date | string) => new Date(d).toISOString().slice(0, 10)
 const { data, status, error, refresh } = await useAsyncData(
   () => `estimate-form-${contractId.value}-${editId.value ?? 'new'}`,
   async () => {
-    const [contract, concepts, allEstimates, corporations, logNotes, files] = await Promise.all([
+    const [contract, sections, concepts, allEstimates, corporations, logNotes, files] = await Promise.all([
       repos.contracts.getById(contractId.value),
+      repos.concepts.listSectionsByContract(contractId.value),
       repos.concepts.listByContract(contractId.value),
       repos.estimates.listByContract(contractId.value),
       repos.corporations.list().catch(() => []),
@@ -46,7 +47,9 @@ const { data, status, error, refresh } = await useAsyncData(
     const contractor = corporations.find((c) => c.id === contract.contractorCorporationId)
     return {
       contract,
+      sections,
       concepts,
+      groups: groupConceptsBySections(sections, concepts),
       upToLast,
       logNotes,
       files,
@@ -100,14 +103,21 @@ const editNote = computed(() => {
 })
 
 // --- Concept picker helpers --------------------------------------------------
-const filteredCatalog = computed(() => {
+// Grouped catalog for picker (section headers + concepts)
+const filteredGroups = computed(() => {
   const q = conceptSearch.value.trim().toLowerCase()
-  if (!q || !data.value) return data.value?.concepts ?? []
-  return data.value.concepts.filter(
-    (c) =>
-      c.specificationNumber.toLowerCase().includes(q) ||
-      c.description.toLowerCase().includes(q),
-  )
+  const groups = data.value?.groups ?? []
+  if (!q) return groups
+  return groups
+    .map((g) => ({
+      ...g,
+      concepts: g.concepts.filter(
+        (c) =>
+          c.specificationNumber.toLowerCase().includes(q) ||
+          c.description.toLowerCase().includes(q),
+      ),
+    }))
+    .filter((g) => g.concepts.length > 0)
 })
 
 function toggleConcept(id: string) {
@@ -130,14 +140,31 @@ function clearAllConcepts() {
 
 // --- Live computation (identical math to the repository) ----------------------
 const rates = computed(() => ({
-  ...DEFAULT_RATES,
+  ivaRate: data.value?.contract.ivaRate ?? 16,
+  retentionPercentage: data.value?.contract.retentionPercentage ?? 5,
+  cincoAlMillarRate: 0.5,
   anticipoPercentage: data.value?.contract.anticipoPercentage ?? 0,
 }))
 
-// Only the selected concepts appear in the editable grid.
-const selectedConcepts = computed(() =>
-  (data.value?.concepts ?? []).filter((c) => selectedConceptIds.value.includes(c.id)),
-)
+// Selected concepts, preserving section order for the grid
+const selectedConcepts = computed(() => {
+  const ids = new Set(selectedConceptIds.value)
+  const ordered: NonNullable<typeof data.value>['concepts'] = []
+  for (const g of (data.value?.groups ?? [])) {
+    for (const c of g.concepts) {
+      if (ids.has(c.id)) ordered.push(c)
+    }
+  }
+  return ordered
+})
+
+// Groups of selected concepts — drives section headers in the editable grid
+const selectedGroups = computed(() => {
+  const ids = new Set(selectedConceptIds.value)
+  return (data.value?.groups ?? [])
+    .map((g) => ({ ...g, concepts: g.concepts.filter((c) => ids.has(c.id)) }))
+    .filter((g) => g.concepts.length > 0)
+})
 
 const lineItems = computed<EstimateLineItem[]>(() => {
   if (!data.value) return []
@@ -353,26 +380,36 @@ const sections = [
           <div v-if="!data.concepts.length" class="text-sm text-muted">
             {{ F.validation.noConcepts }}
           </div>
-          <div v-else class="max-h-56 space-y-px overflow-y-auto rounded-lg border border-default p-1.5">
-            <div
-              v-for="c in filteredCatalog"
-              :key="c.id"
-              class="flex cursor-pointer items-start gap-3 rounded-md px-2 py-1.5 hover:bg-elevated"
-              :class="selectedConceptIds.includes(c.id) ? 'bg-elevated/60' : ''"
-              @click="toggleConcept(c.id)"
-            >
-              <UCheckbox
-                :model-value="selectedConceptIds.includes(c.id)"
-                class="mt-0.5 shrink-0 pointer-events-none"
-              />
-              <div class="min-w-0 flex-1">
-                <span class="font-mono text-xs text-muted">{{ c.specificationNumber }}</span>
-                <span class="ml-2 text-sm text-highlighted">{{ c.description }}</span>
+          <!-- Grouped picker: section headers + concept rows -->
+          <div v-else class="max-h-72 overflow-y-auto rounded-lg border border-default">
+            <template v-for="group in filteredGroups" :key="group.section?.id ?? 'no-section'">
+              <!-- Section header -->
+              <div class="sticky top-0 flex items-center gap-2 border-b border-default bg-elevated px-3 py-1.5">
+                <span class="font-mono text-xs font-semibold text-muted">{{ group.section?.specificationNumber }}</span>
+                <span class="text-xs font-semibold text-default">{{ group.section?.description ?? S.conceptSections.noSection }}</span>
+                <span v-if="group.section" class="ml-auto text-xs text-muted">
+                  {{ formatDate(group.section.startDate) }} – {{ formatDate(group.section.endDate) }}
+                </span>
               </div>
-              <span class="shrink-0 text-xs text-muted">{{ c.unit }}</span>
-              <span class="shrink-0 tabular-nums text-xs text-muted">{{ formatMoney(c.unitPrice) }}</span>
-            </div>
-            <div v-if="filteredCatalog.length === 0" class="py-4 text-center text-sm text-muted">
+              <!-- Concepts in this section -->
+              <div
+                v-for="c in group.concepts"
+                :key="c.id"
+                class="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-elevated/60 transition-colors"
+                :class="selectedConceptIds.includes(c.id) ? 'bg-primary/5' : ''"
+                @click="toggleConcept(c.id)"
+              >
+                <UCheckbox
+                  :model-value="selectedConceptIds.includes(c.id)"
+                  class="shrink-0 pointer-events-none"
+                />
+                <span class="font-mono text-xs text-muted w-16 shrink-0">{{ c.specificationNumber }}</span>
+                <span class="min-w-0 flex-1 text-sm text-highlighted truncate">{{ c.description }}</span>
+                <span class="shrink-0 text-xs text-muted">{{ c.unit }}</span>
+                <span class="shrink-0 tabular-nums text-xs text-muted">{{ formatMoney(c.unitPrice) }}</span>
+              </div>
+            </template>
+            <div v-if="filteredGroups.length === 0" class="py-4 text-center text-sm text-muted">
               {{ F.conceptPicker.noMatch }}
             </div>
           </div>
@@ -419,55 +456,64 @@ const sections = [
                   <th class="px-3 py-2" />
                 </tr>
               </thead>
-              <tbody class="divide-y divide-default">
-                <tr
-                  v-for="li in lineItems"
-                  :key="li.conceptId"
-                  :class="overRows.has(li.conceptId) ? 'bg-error/10' : ''"
-                >
-                  <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ li.conceptNumber }}</td>
-                  <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ li.specificationNumber }}</td>
-                  <td class="min-w-[14rem] px-3 py-2 text-highlighted">{{ li.description }}</td>
-                  <td class="px-3 py-2 text-muted">{{ li.unit }}</td>
-                  <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatNumber(li.inProject) }}</td>
-                  <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatNumber(li.upToLastEstimate) }}</td>
-                  <!-- green: editable -->
-                  <td class="px-3 py-2">
-                    <UInput
-                      v-model.number="qty[li.conceptId]"
-                      type="number"
-                      min="0"
-                      step="any"
-                      :color="overRows.has(li.conceptId) ? 'error' : undefined"
-                      class="w-32 [&_input]:text-right [&_input]:text-success [&_input]:font-medium"
-                    >
-                      <template #trailing>
-                        <span class="pr-1 text-xs text-muted">{{ li.unit }}</span>
-                      </template>
-                    </UInput>
-                  </td>
-                  <!-- red: auto-calculated -->
-                  <td class="px-3 py-2 text-right tabular-nums text-error">{{ formatNumber(li.totalEstimated) }}</td>
-                  <td
-                    class="px-3 py-2 text-right tabular-nums"
-                    :class="overRows.has(li.conceptId) ? 'font-semibold text-error' : 'text-error'"
+              <tbody>
+                <template v-for="group in selectedGroups" :key="group.section?.id ?? 'no-section'">
+                  <!-- Section header row in grid -->
+                  <tr class="bg-elevated border-t-2 border-default">
+                    <td colspan="12" class="px-3 py-1.5">
+                      <span class="font-mono text-xs font-semibold text-muted mr-2">{{ group.section?.specificationNumber }}</span>
+                      <span class="text-xs font-semibold text-default">{{ group.section?.description ?? S.conceptSections.noSection }}</span>
+                      <span v-if="group.section" class="ml-3 text-xs text-muted">
+                        {{ formatDate(group.section.startDate) }} – {{ formatDate(group.section.endDate) }}
+                      </span>
+                    </td>
+                  </tr>
+                  <!-- Concept rows for this section (from lineItems, filtered by group) -->
+                  <tr
+                    v-for="li in lineItems.filter(li => group.concepts.some(c => c.id === li.conceptId))"
+                    :key="li.conceptId"
+                    class="border-t border-default/50"
+                    :class="overRows.has(li.conceptId) ? 'bg-error/10' : ''"
                   >
-                    {{ formatNumber(li.toExecute) }}
-                  </td>
-                  <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatMoney(li.unitPrice) }}</td>
-                  <td class="px-3 py-2 text-right tabular-nums font-medium text-error">{{ formatMoney(li.totalAmount) }}</td>
-                  <!-- Deselect row -->
-                  <td class="px-2 py-2">
-                    <UButton
-                      icon="i-lucide-x"
-                      size="xs"
-                      color="neutral"
-                      variant="ghost"
-                      :aria-label="`Quitar ${li.specificationNumber}`"
-                      @click="toggleConcept(li.conceptId)"
-                    />
-                  </td>
-                </tr>
+                    <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ li.conceptNumber }}</td>
+                    <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ li.specificationNumber }}</td>
+                    <td class="min-w-[14rem] px-3 py-2 text-highlighted">{{ li.description }}</td>
+                    <td class="px-3 py-2 text-muted">{{ li.unit }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatNumber(li.inProject) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatNumber(li.upToLastEstimate) }}</td>
+                    <td class="px-3 py-2">
+                      <UInput
+                        v-model.number="qty[li.conceptId]"
+                        type="number"
+                        min="0"
+                        step="any"
+                        :color="overRows.has(li.conceptId) ? 'error' : undefined"
+                        class="w-32 [&_input]:text-right [&_input]:text-success [&_input]:font-medium"
+                      >
+                        <template #trailing>
+                          <span class="pr-1 text-xs text-muted">{{ li.unit }}</span>
+                        </template>
+                      </UInput>
+                    </td>
+                    <td class="px-3 py-2 text-right tabular-nums text-error">{{ formatNumber(li.totalEstimated) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums" :class="overRows.has(li.conceptId) ? 'font-semibold text-error' : 'text-error'">
+                      {{ formatNumber(li.toExecute) }}
+                    </td>
+                    <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatMoney(li.unitPrice) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums font-medium text-error">{{ formatMoney(li.totalAmount) }}</td>
+                    <td class="px-2 py-2">
+                      <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" :aria-label="`Quitar ${li.specificationNumber}`" @click="toggleConcept(li.conceptId)" />
+                    </td>
+                  </tr>
+                  <!-- Section subtotal -->
+                  <tr class="border-t border-default bg-elevated/30">
+                    <td colspan="10" class="px-3 py-1 text-right text-xs text-muted">{{ S.conceptSections.subtotal }}</td>
+                    <td class="px-3 py-1 text-right tabular-nums text-xs font-semibold text-highlighted">
+                      {{ formatMoney(lineItems.filter(li => group.concepts.some(c => c.id === li.conceptId)).reduce((s, li) => s + li.totalAmount, 0)) }}
+                    </td>
+                    <td />
+                  </tr>
+                </template>
               </tbody>
               <tfoot class="border-t border-default bg-elevated/50">
                 <tr>

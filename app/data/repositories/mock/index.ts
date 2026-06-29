@@ -13,6 +13,7 @@ import { RepositoryError, notFound } from '../../errors'
 import type {
   Alert,
   Concept,
+  ConceptSection,
   Contract,
   Estimate,
   EstimateCover,
@@ -33,6 +34,7 @@ import type {
   Repositories,
   CreateAgreementInput,
   CreateConceptInput,
+  CreateConceptSectionInput,
   CreateContractInput,
   CreateCorporationInput,
   CreateEstimateInput,
@@ -57,6 +59,7 @@ export function createMockRepositories(): Repositories {
     users: clone(seed.users),
     contracts: clone(seed.contracts),
     financials: clone(seed.contractFinancials),
+    conceptSections: clone(seed.conceptSections),
     concepts: clone(seed.concepts),
     estimates: clone(seed.estimates),
     logNotes: clone(seed.logNotes),
@@ -159,11 +162,21 @@ export function createMockRepositories(): Repositories {
         const now = new Date()
         const contractId = genId('CT')
 
-        // Create initial concepts and derive amount from them.
+        // Create initial sections.
+        const createdSections: ConceptSection[] = (input.initialSections ?? []).map((si, i) => ({
+          id: genId('CS') as ConceptSection['id'],
+          contractId,
+          ...si,
+          order: si.order ?? i,
+        }))
+        db.conceptSections.push(...createdSections)
+
+        // Create initial concepts (resolve sectionIndex → generated sectionId).
         const createdConcepts: Concept[] = input.initialConcepts.map((ci) => ({
           id: genId('CN'),
           contractId,
           ...ci,
+          sectionId: ci.sectionId != null ? createdSections.find(s => s.id === ci.sectionId)?.id ?? ci.sectionId : null,
         }))
         db.concepts.push(...createdConcepts)
 
@@ -242,11 +255,25 @@ export function createMockRepositories(): Repositories {
         await delay()
         return clone(db.concepts.filter((c) => c.contractId === contractId))
       },
+      async listSectionsByContract(contractId) {
+        await delay()
+        return clone(
+          db.conceptSections
+            .filter((s) => s.contractId === contractId)
+            .sort((a, b) => a.order - b.order),
+        )
+      },
       async create(contractId, input: CreateConceptInput) {
         await delay()
-        const concept: Concept = { id: genId('CN'), contractId, ...input }
+        const concept: Concept = { id: genId('CN'), contractId, sectionId: input.sectionId ?? null, ...input }
         db.concepts.push(concept)
         return clone(concept)
+      },
+      async createSection(contractId, input: CreateConceptSectionInput) {
+        await delay()
+        const section: ConceptSection = { id: genId('CS') as ConceptSection['id'], contractId, ...input }
+        db.conceptSections.push(section)
+        return clone(section)
       },
       async delete(conceptId) {
         await delay()
@@ -548,7 +575,12 @@ export function createMockRepositories(): Repositories {
           // Create new concepts and add schedule items for them.
           for (const draft of a.newConcepts) {
             const { startDate, endDate, ...conceptFields } = draft as typeof draft & { startDate?: Date; endDate?: Date }
-            const newConcept = { id: genId('CN'), contractId: a.contractId, ...conceptFields }
+            const newConcept = {
+              id: genId('CN'),
+              contractId: a.contractId,
+              sectionId: (draft as typeof draft & { sectionId?: string }).sectionId ?? null,
+              ...conceptFields,
+            }
             db.concepts.push(newConcept)
             const schedule = db.schedules.find((s) => s.contractId === a.contractId)
             if (schedule && startDate && endDate) {
