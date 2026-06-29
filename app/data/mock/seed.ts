@@ -49,6 +49,8 @@ export const contracts: Contract[] = [
     status: 'active',
     amount: 32_600_000_000, // $326,000,000.00
     anticipoPercentage: 20,
+    ivaRate: 16,
+    retentionPercentage: 5,
     startDate: d('2024-01-15'),
     endDate: d('2024-12-31'),
     createdById: 'U-RES',

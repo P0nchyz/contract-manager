@@ -8,7 +8,7 @@
  * draft estimates visible to the resident only.
  */
 import * as seed from '../../mock/seed'
-import { buildLineItem, buildSummary, DEFAULT_RATES } from '../../calc/estimate'
+import { buildLineItem, buildSummary } from '../../calc/estimate'
 import { RepositoryError, notFound } from '../../errors'
 import type {
   Alert,
@@ -157,13 +157,30 @@ export function createMockRepositories(): Repositories {
       async create(input: CreateContractInput) {
         await delay()
         const now = new Date()
+        const contractId = genId('CT')
+
+        // Create initial concepts and derive amount from them.
+        const createdConcepts: Concept[] = input.initialConcepts.map((ci) => ({
+          id: genId('CN'),
+          contractId,
+          ...ci,
+        }))
+        db.concepts.push(...createdConcepts)
+
+        const amount = createdConcepts.reduce(
+          (s, c) => s + c.unitPrice * c.contractedQuantity,
+          0,
+        )
+
         const contract: Contract = {
-          id: genId('CT'),
+          id: contractId,
           code: input.code,
           title: input.title,
           status: 'active',
-          amount: input.amount,
+          amount,
           anticipoPercentage: input.anticipoPercentage,
+          ivaRate: input.ivaRate,
+          retentionPercentage: input.retentionPercentage,
           startDate: input.startDate,
           endDate: input.endDate,
           createdById: currentUserId,
@@ -176,6 +193,25 @@ export function createMockRepositories(): Repositories {
           updatedAt: now,
         }
         db.contracts.push(contract)
+
+        // Create schedule from the supplied items, resolving conceptIndex → conceptId.
+        const scheduleItems = input.scheduleItems.map((si) => {
+          const concept = createdConcepts[si.conceptIndex]
+          return {
+            id: genId('SI'),
+            contractId,
+            label: concept?.description ?? '',
+            conceptId: concept?.id ?? null,
+            startDate: si.startDate,
+            endDate: si.endDate,
+            programmedPercentage: 0,
+            actualPercentage: null,
+            programmedAmount: concept ? concept.unitPrice * concept.contractedQuantity : 0,
+            actualAmount: null,
+          }
+        })
+        db.schedules.push({ id: genId('SCH'), contractId, items: scheduleItems })
+
         return clone(contract)
       },
       async update(id, patch) {
@@ -250,7 +286,9 @@ export function createMockRepositories(): Repositories {
           return buildLineItem(concept, li.inThisEstimate, upToLast, i + 1)
         })
         const summary = buildSummary(lineItems, {
-          ...DEFAULT_RATES,
+          ivaRate: contract.ivaRate ?? 16,
+          retentionPercentage: contract.retentionPercentage ?? 5,
+          cincoAlMillarRate: 0.5,
           anticipoPercentage: contract.anticipoPercentage,
         })
         const number = prior.length + 1
@@ -306,7 +344,12 @@ export function createMockRepositories(): Repositories {
           )
           return buildLineItem(concept, li.inThisEstimate, upToLast, i + 1)
         })
-        e.summary = buildSummary(e.lineItems, { ...DEFAULT_RATES, anticipoPercentage: contract.anticipoPercentage })
+        e.summary = buildSummary(e.lineItems, {
+          ivaRate: contract.ivaRate ?? 16,
+          retentionPercentage: contract.retentionPercentage ?? 5,
+          cincoAlMillarRate: 0.5,
+          anticipoPercentage: contract.anticipoPercentage,
+        })
         e.periodStart = input.periodStart
         e.periodEnd = input.periodEnd
         if (input.evidenceFileIds) e.evidenceFileIds = input.evidenceFileIds
@@ -579,6 +622,16 @@ export function createMockRepositories(): Repositories {
           }
         }
         throw notFound('Elemento de programa')
+      },
+      async create(contractId, items) {
+        await delay()
+        const schedule = {
+          id: genId('SCH'),
+          contractId,
+          items: items.map((item) => ({ id: genId('SI'), contractId, ...item })),
+        }
+        db.schedules.push(schedule)
+        return clone(schedule)
       },
     },
 

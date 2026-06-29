@@ -23,8 +23,10 @@ export interface Contract {
   title: string // e.g. "Diseñar e instrumentar el modelo virtual AutoDesk"
   status: ContractStatus
 
-  amount: Money // contracted amount
+  amount: Money // derived: sum of (unitPrice × contractedQuantity) across all concepts
   anticipoPercentage: Percentage // advance payment %
+  ivaRate: Percentage            // e.g. 16 — set at contract creation
+  retentionPercentage: Percentage // retenciones / fondo de garantía — set at creation
 
   startDate: Date
   endDate: Date

@@ -63,17 +63,29 @@ export interface AuthRepository {
 }
 
 // --- Contracts -------------------------------------------------------------
+export interface InitialScheduleItem {
+  // Ties directly to an index in the initialConcepts array (0-based) so
+  // the mock can assign the generated ConceptId after creating each concept.
+  conceptIndex: number
+  startDate: Date
+  endDate: Date
+}
+
 export interface CreateContractInput {
   code: string
   title: string
-  amount: Money
+  // amount is DERIVED from initialConcepts — not supplied by the caller.
   anticipoPercentage: Percentage
+  ivaRate: Percentage            // e.g. 16
+  retentionPercentage: Percentage // e.g. 5
   startDate: Date
   endDate: Date
-  superintendentId: UserId
-  supervisorId: UserId
+  superintendentId: UserId | null
+  supervisorId: UserId | null
   financialId: UserId | null
   contractorCorporationId: CorporationId | null
+  initialConcepts: CreateConceptInput[]
+  scheduleItems: InitialScheduleItem[]
 }
 export interface ContractRepository {
   /** Contracts visible to the current user (assignment/creation rules applied). */
@@ -180,6 +192,8 @@ export type FiniquitoRepository = CloseFlowRepository<FiniquitoStatement, Finiqu
 export interface ScheduleRepository {
   getByContract(contractId: ContractId): Promise<WorkSchedule> // S-curve derived in utils
   updateItem(itemId: ScheduleItemId, patch: Partial<Pick<ScheduleItem, 'startDate' | 'endDate' | 'programmedAmount'>>): Promise<ScheduleItem>
+  // Internal — called by contracts.create; not called directly from UI.
+  create(contractId: ContractId, items: Omit<ScheduleItem, 'id' | 'contractId'>[]): Promise<WorkSchedule>
 }
 
 // --- Files & evidence ------------------------------------------------------
