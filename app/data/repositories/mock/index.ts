@@ -28,13 +28,14 @@ import type {
   WorkflowAction,
   WorkflowEvent,
 } from '../../models'
-import type { ConceptChange, NewConceptDraft } from '../../models/agreements'
+import type { ConceptChange, NewConceptDraft, NewSectionDraft } from '../../models/agreements'
 import { SIGNING_ROLES } from '../../models'
 import type {
   Repositories,
   CreateAgreementInput,
   CreateConceptInput,
   CreateConceptSectionInput,
+  NewSectionDraft,
   CreateContractInput,
   CreateCorporationInput,
   CreateEstimateInput,
@@ -171,13 +172,22 @@ export function createMockRepositories(): Repositories {
         }))
         db.conceptSections.push(...createdSections)
 
-        // Create initial concepts (resolve sectionIndex → generated sectionId).
-        const createdConcepts: Concept[] = input.initialConcepts.map((ci) => ({
-          id: genId('CN'),
-          contractId,
-          ...ci,
-          sectionId: ci.sectionId != null ? createdSections.find(s => s.id === ci.sectionId)?.id ?? ci.sectionId : null,
-        }))
+        // Create initial concepts. sectionId in input is a numeric index string (e.g. "0", "1")
+        // pointing into initialSections/createdSections. Resolve it to the generated id.
+        const createdConcepts: Concept[] = input.initialConcepts.map((ci) => {
+          let resolvedSectionId: ConceptSection['id'] | null = null
+          if (ci.sectionId != null) {
+            const idxStr = String(ci.sectionId)
+            const asIndex = parseInt(idxStr, 10)
+            if (!isNaN(asIndex) && createdSections[asIndex]) {
+              resolvedSectionId = createdSections[asIndex].id
+            } else {
+              // fallback: try direct id match
+              resolvedSectionId = createdSections.find(s => s.id === ci.sectionId)?.id ?? null
+            }
+          }
+          return { id: genId('CN'), contractId, ...ci, sectionId: resolvedSectionId }
+        })
         db.concepts.push(...createdConcepts)
 
         const amount = createdConcepts.reduce(
@@ -569,6 +579,9 @@ export function createMockRepositories(): Repositories {
           description: input.description,
           conceptChanges: input.conceptChanges ?? [],
           newConcepts: input.newConcepts ?? [],
+          newSections: input.newSections ?? [],
+          newContractStartDate: input.newContractStartDate ?? null,
+          newContractEndDate: input.newContractEndDate ?? null,
           amountDelta: input.amountDelta,
           timeDeltaDays: input.timeDeltaDays,
           status: 'draft',
@@ -589,7 +602,13 @@ export function createMockRepositories(): Repositories {
         if (a.status !== 'draft' && a.status !== 'with_notes') {
           throw new RepositoryError(409, 'Solo se editan convenios en borrador o con notas', 'not_editable')
         }
-        Object.assign(a, patch, { kind: deriveAgreementKind(patch.amountDelta, patch.timeDeltaDays), updatedAt: new Date() })
+        Object.assign(a, patch, {
+          kind: deriveAgreementKind(patch.amountDelta, patch.timeDeltaDays),
+          newSections: patch.newSections ?? a.newSections ?? [],
+          newContractStartDate: 'newContractStartDate' in patch ? patch.newContractStartDate : a.newContractStartDate,
+          newContractEndDate:   'newContractEndDate'   in patch ? patch.newContractEndDate   : a.newContractEndDate,
+          updatedAt: new Date(),
+        })
         return clone(a)
       },
       async submit(id) {
@@ -617,6 +636,33 @@ export function createMockRepositories(): Repositories {
         if (allSigned) {
           a.status = 'approved'
           a.history.push(event('approved'))
+          // Apply direct contract date overrides.
+          const contract = db.contracts.find((c) => c.id === a.contractId)
+          if (contract) {
+            if (a.newContractStartDate) {
+              contract.startDate = a.newContractStartDate
+              contract.updatedAt = new Date()
+            }
+            if (a.newContractEndDate) {
+              contract.endDate = a.newContractEndDate
+              contract.updatedAt = new Date()
+            }
+          }
+          // Create new sections from this agreement.
+          const createdAgSections: ConceptSection[] = (a.newSections ?? []).map((ns, i) => {
+            const existingCount = db.conceptSections.filter(s => s.contractId === a.contractId).length
+            const sec: ConceptSection = {
+              id: genId('CS') as ConceptSection['id'],
+              contractId: a.contractId,
+              specificationNumber: ns.specificationNumber,
+              description: ns.description,
+              startDate: ns.startDate,
+              endDate: ns.endDate,
+              order: existingCount + i,
+            }
+            db.conceptSections.push(sec)
+            return sec
+          })
           // Apply concept changes to catalog.
           for (const change of a.conceptChanges) {
             const concept = db.concepts.find((c) => c.id === change.conceptId)
@@ -638,10 +684,15 @@ export function createMockRepositories(): Repositories {
           // Create new concepts and add schedule items for them.
           for (const draft of a.newConcepts) {
             const { startDate, endDate, ...conceptFields } = draft as typeof draft & { startDate?: Date; endDate?: Date }
+            // sectionId may reference an existing section or one just created by this agreement
+            const draftSectionId = (draft as typeof draft & { sectionId?: string }).sectionId ?? null
+            const resolvedSectionId = draftSectionId
+              ? (createdAgSections.find(s => s.id === draftSectionId)?.id ?? draftSectionId)
+              : null
             const newConcept = {
               id: genId('CN'),
               contractId: a.contractId,
-              sectionId: (draft as typeof draft & { sectionId?: string }).sectionId ?? null,
+              sectionId: resolvedSectionId,
               ...conceptFields,
             }
             db.concepts.push(newConcept)
@@ -661,16 +712,8 @@ export function createMockRepositories(): Repositories {
               })
             }
           }
-          // Apply time delta to contract end date.
-          if (a.timeDeltaDays) {
-            const contract = db.contracts.find((c) => c.id === a.contractId)
-            if (contract) {
-              const newEnd = new Date(contract.endDate)
-              newEnd.setDate(newEnd.getDate() + a.timeDeltaDays)
-              contract.endDate = newEnd
-              contract.updatedAt = new Date()
-            }
-          }
+          // timeDeltaDays is kept as an informational field but direct date overrides
+          // (newContractStartDate / newContractEndDate) are applied above.
         }
         a.updatedAt = new Date()
         return clone(a)

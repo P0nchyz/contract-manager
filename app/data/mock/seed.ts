@@ -240,7 +240,7 @@ export const logNotes: LogNote[] = [
 
 // --- Modification agreements ----------------------------------------------
 export const agreements: ModificationAgreement[] = [
-  { id: 'AG-001', contractId: 'CT-001', number: 1, kind: 'amount', description: 'Ampliación de alcance: 2,000 m2 adicionales de modelado MEP.', amountDelta: 240_000_000, timeDeltaDays: null, status: 'approved', signatures: [
+  { id: 'AG-001', contractId: 'CT-001', number: 1, kind: 'amount', description: 'Ampliación de alcance: 2,000 m2 adicionales de modelado MEP.', conceptChanges: [], newConcepts: [], newSections: [], newContractStartDate: null, newContractEndDate: null, amountDelta: 240_000_000, timeDeltaDays: null, status: 'approved', signatures: [
     { id: 'AS-1', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-03-15'), status: 'signed' },
     { id: 'AS-2', role: 'supervisor', userId: 'U-SVR', signedAt: d('2024-03-16'), status: 'signed' },
     { id: 'AS-3', role: 'resident', userId: 'U-RES', signedAt: d('2024-03-17'), status: 'signed' },

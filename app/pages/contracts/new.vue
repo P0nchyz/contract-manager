@@ -101,12 +101,21 @@ const resolvedSections = computed<CreateConceptSectionInput[]>(() =>
 )
 
 const sectionErrors = computed(() =>
-  catalogSections.value.map((s) => ({
-    spec:  s.specificationNumber.trim() ? '' : S.conceptSections.validation.specRequired,
-    desc:  s.description.trim()         ? '' : S.conceptSections.validation.descRequired,
-    dates: (!s._startRaw || !s._endRaw) ? S.conceptSections.validation.datesRequired
-           : s._startRaw >= s._endRaw   ? S.conceptSections.validation.endBeforeStart : '',
-  })),
+  catalogSections.value.map((s) => {
+    const spec  = s.specificationNumber.trim() ? '' : S.conceptSections.validation.specRequired
+    const desc  = s.description.trim()         ? '' : S.conceptSections.validation.descRequired
+    let dates = ''
+    if (!s._startRaw || !s._endRaw) {
+      dates = S.conceptSections.validation.datesRequired
+    } else if (s._startRaw >= s._endRaw) {
+      dates = S.conceptSections.validation.endBeforeStart
+    } else if (startDate.value && s._startRaw < startDate.value) {
+      dates = S.conceptSections.validation.startBeforeContract
+    } else if (endDate.value && s._endRaw > endDate.value) {
+      dates = S.conceptSections.validation.endAfterContract
+    }
+    return { spec, desc, dates }
+  }),
 )
 
 // ─── Form: section 4 — concepts ──────────────────────────────────────────────
@@ -130,8 +139,9 @@ const resolvedConcepts = computed<CreateConceptInput[]>(() =>
     unit:                c.unit.trim(),
     contractedQuantity:  parseFloat(c._qtyRaw) || 0,
     unitPrice:           Math.round((parseFloat(c._priceRaw) || 0) * 100),
-    // sectionId is resolved by the mock from the index in initialSections
-    sectionId:           null, // server resolves after creating sections
+    // Pass _sectionIdx as a numeric string so the mock can resolve it to the
+    // generated ConceptSectionId by position in initialSections.
+    sectionId: c._sectionIdx != null ? String(c._sectionIdx) as any : null,
   })),
 )
 const totalAmount = computed(() =>
@@ -171,6 +181,16 @@ const scheduleErrors = computed(() =>
     if (start > end) return F.schedule.validation.startAfterEnd
     if (contractStartDate.value && start < contractStartDate.value) return F.schedule.validation.startAfterContract
     if (contractEndDate.value   && end   > contractEndDate.value)   return F.schedule.validation.endBeforeContract
+    // Bug 2: validate against the concept's assigned section period
+    const concept = concepts.value[s.conceptIndex]
+    const sectionIdx = concept?._sectionIdx
+    if (sectionIdx != null) {
+      const sec = catalogSections.value[sectionIdx]
+      if (sec?._startRaw && s.startRaw && s.startRaw < sec._startRaw)
+        return S.conceptSections.validation.startBeforeSection
+      if (sec?._endRaw && s.endRaw && s.endRaw > sec._endRaw)
+        return S.conceptSections.validation.endAfterSection
+    }
     return null
   }),
 )

@@ -39,7 +39,7 @@ import type {
   ConceptSection,
   ConceptSectionId,
 } from '../models'
-import type { ConceptChange, NewConceptDraft } from '../models/agreements'
+import type { ConceptChange, NewConceptDraft, NewSectionDraft } from '../models/agreements'
 
 export interface ListParams {
   page?: number
@@ -173,6 +173,10 @@ export interface CreateAgreementInput {
   // Per-concept changes; deltas are derived from these on save.
   conceptChanges: ConceptChange[]
   newConcepts: NewConceptDraft[]
+  newSections: NewSectionDraft[]
+  // Direct contract date overrides (applied on approval).
+  newContractStartDate: Date | null
+  newContractEndDate: Date | null
   // Aggregate deltas — computed by the form, stored on the model.
   amountDelta: Money | null
   timeDeltaDays: number | null

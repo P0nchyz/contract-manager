@@ -199,7 +199,7 @@ const editLink = computed(() => ({
           </dl>
 
           <!-- Concept changes -->
-          <div v-if="agreement.conceptChanges.length" class="mt-5">
+          <div v-if="agreement.conceptChanges?.length" class="mt-5">
             <div class="mb-2 text-sm font-medium text-default">{{ AG.conceptChanges.title }}</div>
             <div class="overflow-x-auto rounded-lg border border-default">
               <table class="w-full min-w-[40rem] text-sm">
@@ -216,7 +216,7 @@ const editLink = computed(() => ({
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-default">
-                  <tr v-for="cc in agreement.conceptChanges" :key="cc.conceptId">
+                  <tr v-for="cc in (agreement.conceptChanges ?? [])" :key="cc.conceptId">
                     <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ conceptOf(cc.conceptId)?.specificationNumber }}</td>
                     <td class="min-w-[10rem] px-3 py-2 text-highlighted">{{ conceptOf(cc.conceptId)?.description }}</td>
                     <td class="px-3 py-2 text-right tabular-nums text-muted">{{ formatNumber(conceptOf(cc.conceptId)?.contractedQuantity ?? 0) }}</td>
@@ -240,7 +240,7 @@ const editLink = computed(() => ({
           </div>
 
           <!-- New concepts -->
-          <div v-if="agreement.newConcepts.length" class="mt-5">
+          <div v-if="agreement.newConcepts?.length" class="mt-5">
             <div class="mb-2 text-sm font-medium text-default">{{ AG.newConcepts.title }}</div>
             <div class="overflow-x-auto rounded-lg border border-default">
               <table class="w-full min-w-[36rem] text-sm">
@@ -256,7 +256,7 @@ const editLink = computed(() => ({
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-default">
-                  <tr v-for="nc in agreement.newConcepts" :key="nc.specificationNumber">
+                  <tr v-for="nc in (agreement.newConcepts ?? [])" :key="nc.specificationNumber">
                     <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ nc.specificationNumber }}</td>
                     <td class="min-w-[10rem] px-3 py-2 text-highlighted">{{ nc.description }}</td>
                     <td class="px-3 py-2 text-muted">{{ nc.unit }}</td>
@@ -272,6 +272,46 @@ const editLink = computed(() => ({
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <!-- New sections -->
+          <div v-if="agreement.newSections?.length" class="mt-5">
+            <div class="mb-2 text-sm font-medium text-default">Secciones nuevas</div>
+            <div class="overflow-x-auto rounded-lg border border-default">
+              <table class="w-full min-w-[28rem] text-sm">
+                <thead class="border-b border-default bg-elevated/50 text-xs text-muted">
+                  <tr>
+                    <th class="px-3 py-2 text-left font-medium">{{ AG.conceptChanges.columns.specification }}</th>
+                    <th class="px-3 py-2 text-left font-medium">Descripción</th>
+                    <th class="px-3 py-2 text-center font-medium">Inicio</th>
+                    <th class="px-3 py-2 text-center font-medium">Término</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-default">
+                  <tr v-for="ns in (agreement.newSections ?? [])" :key="ns.specificationNumber">
+                    <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ ns.specificationNumber }}</td>
+                    <td class="px-3 py-2 text-highlighted">{{ ns.description }}</td>
+                    <td class="px-3 py-2 text-center text-muted">{{ formatDate(ns.startDate) }}</td>
+                    <td class="px-3 py-2 text-center text-muted">{{ formatDate(ns.endDate) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Contract date changes -->
+          <div v-if="agreement.newContractStartDate || agreement.newContractEndDate" class="mt-5">
+            <div class="mb-2 text-sm font-medium text-default">{{ AG.contractDates.title }}</div>
+            <dl class="grid gap-4 sm:grid-cols-2 rounded-lg border border-default p-3">
+              <div v-if="agreement.newContractStartDate">
+                <dt class="text-xs text-muted">{{ AG.contractDates.newStart }}</dt>
+                <dd class="font-medium text-success">{{ formatDate(agreement.newContractStartDate) }}</dd>
+              </div>
+              <div v-if="agreement.newContractEndDate">
+                <dt class="text-xs text-muted">{{ AG.contractDates.newEnd }}</dt>
+                <dd class="font-medium text-success">{{ formatDate(agreement.newContractEndDate) }}</dd>
+              </div>
+            </dl>
           </div>
 
           <UAlert

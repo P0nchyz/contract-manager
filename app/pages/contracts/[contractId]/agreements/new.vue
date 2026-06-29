@@ -1,8 +1,9 @@
 <!-- app/pages/contracts/[contractId]/agreements/new.vue -->
 <script setup lang="ts">
+import { ref, computed, reactive, watch, watchEffect } from 'vue'
 import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
-import type { ConceptChange, NewConceptDraft } from '~/data/models/agreements'
+import type { ConceptChange, NewConceptDraft, NewSectionDraft } from '~/data/models/agreements'
 import type { ConceptId } from '~/data/models'
 
 definePageMeta({ requiredPermission: 'agreement:create' })
@@ -22,7 +23,8 @@ const toInputDate = (d: Date | string | undefined) =>
 const { data, status, error, refresh } = await useAsyncData(
   () => `agreement-form-${contractId.value}-${editId.value ?? 'new'}`,
   async () => {
-    const [sections, concepts, schedule, editing] = await Promise.all([
+    const [contract, sections, concepts, schedule, editing] = await Promise.all([
+      repos.contracts.getById(contractId.value),
       repos.concepts.listSectionsByContract(contractId.value),
       repos.concepts.listByContract(contractId.value),
       repos.schedule.getByContract(contractId.value).catch(() => null),
@@ -35,7 +37,7 @@ const { data, status, error, refresh } = await useAsyncData(
         if (item.conceptId) scheduleByConceptId[item.conceptId] = item
       }
     }
-    return { sections, concepts, groups: groupConceptsBySections(sections, concepts), scheduleByConceptId, editing }
+    return { contract, sections, concepts, groups: groupConceptsBySections(sections, concepts), scheduleByConceptId, editing }
   },
 )
 
@@ -53,6 +55,10 @@ const newConcepts = ref<(NewConceptDraft & {
   _start: string
   _end: string
 })[]>([])
+const newSections = ref<(NewSectionDraft & { _startRaw: string; _endRaw: string })[]>([])
+// Contract date overrides
+const newContractStartRaw = ref('')
+const newContractEndRaw   = ref('')
 const inited = ref(false)
 
 watchEffect(() => {
@@ -74,6 +80,13 @@ watchEffect(() => {
       _start: toInputDate((nc as NewConceptDraft & { startDate?: Date }).startDate),
       _end: toInputDate((nc as NewConceptDraft & { endDate?: Date }).endDate),
     }))
+    newSections.value = (e.newSections ?? []).map((ns) => ({
+      ...ns,
+      _startRaw: toInputDate(ns.startDate),
+      _endRaw: toInputDate(ns.endDate),
+    }))
+    if (e.newContractStartDate) newContractStartRaw.value = toInputDate(e.newContractStartDate)
+    if (e.newContractEndDate)   newContractEndRaw.value   = toInputDate(e.newContractEndDate)
   }
   inited.value = true
 })
@@ -105,6 +118,31 @@ function addConceptChange(conceptId: ConceptId) {
 
 function removeConceptChange(idx: number) {
   conceptChanges.value.splice(idx, 1)
+}
+
+function addNewSection() {
+  newSections.value.push({
+    specificationNumber: '',
+    description: '',
+    startDate: new Date(),
+    endDate: new Date(),
+    order: (data.value?.sections.length ?? 0) + newSections.value.length,
+    _startRaw: '',
+    _endRaw: '',
+  })
+}
+function removeNewSection(idx: number) {
+  newSections.value.splice(idx, 1)
+  // Clear sectionId on new concepts that referenced this new section by index
+  newConcepts.value.forEach((nc) => {
+    if ((nc.sectionId as any) === `new:${idx}`) nc.sectionId = null
+    // Re-index references to sections after the removed one
+    const ref = nc.sectionId as string | null
+    if (ref?.startsWith('new:')) {
+      const refIdx = parseInt(ref.slice(4), 10)
+      if (refIdx > idx) (nc as any).sectionId = `new:${refIdx - 1}`
+    }
+  })
 }
 
 function addNewConcept() {
@@ -140,6 +178,16 @@ const resolvedChanges = computed<ConceptChange[]>(() =>
   }),
 )
 
+const resolvedNewSections = computed<NewSectionDraft[]>(() =>
+  newSections.value.map((ns, i) => ({
+    specificationNumber: ns.specificationNumber.trim(),
+    description: ns.description.trim(),
+    startDate: ns._startRaw ? new Date(`${ns._startRaw}T12:00:00`) : new Date(),
+    endDate:   ns._endRaw   ? new Date(`${ns._endRaw}T12:00:00`)   : new Date(),
+    order: (data.value?.sections.length ?? 0) + i,
+  })),
+)
+
 const resolvedNewConcepts = computed<NewConceptDraft[]>(() =>
   newConcepts.value.map((nc) => ({
     specificationNumber: nc.specificationNumber.trim(),
@@ -147,9 +195,17 @@ const resolvedNewConcepts = computed<NewConceptDraft[]>(() =>
     unit: nc.unit.trim(),
     contractedQuantity: parseFloat(nc._qtyRaw) || 0,
     unitPrice: Math.round((parseFloat(nc._priceRaw) || 0) * 100),
+    sectionId: nc.sectionId ?? null,
     startDate: nc._start ? new Date(`${nc._start}T12:00:00`) : undefined,
     endDate: nc._end ? new Date(`${nc._end}T12:00:00`) : undefined,
   })),
+)
+
+const newContractStartDate = computed(() =>
+  newContractStartRaw.value ? new Date(`${newContractStartRaw.value}T12:00:00`) : null,
+)
+const newContractEndDate = computed(() =>
+  newContractEndRaw.value ? new Date(`${newContractEndRaw.value}T12:00:00`) : null,
 )
 
 // Derived aggregate deltas shown in the summary
@@ -204,7 +260,12 @@ const newConceptErrors = computed(() =>
   })),
 )
 const hasChanges = computed(
-  () => conceptChanges.value.length > 0 || newConcepts.value.length > 0,
+  () =>
+    conceptChanges.value.length > 0 ||
+    newConcepts.value.length > 0 ||
+    newSections.value.length > 0 ||
+    !!newContractStartRaw.value ||
+    !!newContractEndRaw.value,
 )
 const noChangesError = computed(() =>
   !hasChanges.value ? AG.validation.noChanges : null,
@@ -234,6 +295,9 @@ async function onSave() {
       description: description.value.trim(),
       conceptChanges: resolvedChanges.value,
       newConcepts: resolvedNewConcepts.value,
+      newSections: resolvedNewSections.value,
+      newContractStartDate: newContractStartDate.value,
+      newContractEndDate: newContractEndDate.value,
       amountDelta: derivedAmountDelta.value,
       timeDeltaDays: derivedTimeDelta.value,
     }
@@ -254,7 +318,7 @@ async function onSave() {
     <template #header>
       <UDashboardNavbar
         :title="isEdit && data?.editing
-          ? `${AG.editTitlePrefix} No. ${data.editing.number}`
+          ? `${AG.editTitlePrefix} No. ${data?.editing?.number}`
           : AG.newTitle"
       >
         <template #leading>
@@ -436,6 +500,69 @@ async function onSave() {
           </div>
         </UCard>
 
+        <!-- New sections -->
+        <UCard :ui="{ body: 'p-0 sm:p-0' }">
+          <template #header>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 font-medium">
+                <UIcon name="i-lucide-layers" class="size-4 text-muted" />
+                {{ S.conceptSections.addSection }}
+              </div>
+              <UButton size="xs" icon="i-lucide-plus" color="neutral" variant="outline" @click="addNewSection">
+                {{ S.conceptSections.addSection }}
+              </UButton>
+            </div>
+          </template>
+
+          <div v-if="!newSections.length" class="px-4 py-4 text-sm text-muted">
+            Agrega secciones nuevas que se crearán en el catálogo al aprobarse el convenio.
+          </div>
+          <div v-else class="divide-y divide-default">
+            <div v-for="(ns, idx) in newSections" :key="idx" class="grid gap-3 px-4 py-3 sm:grid-cols-2 lg:grid-cols-5">
+              <UFormField :label="S.conceptSections.specificationNumber">
+                <UInput v-model="ns.specificationNumber" class="w-full" placeholder="D" />
+              </UFormField>
+              <UFormField :label="S.conceptSections.description" class="lg:col-span-2">
+                <UInput v-model="ns.description" class="w-full" placeholder="Nueva etapa" />
+              </UFormField>
+              <UFormField :label="S.conceptSections.from">
+                <UInput v-model="ns._startRaw" type="date" class="w-full" />
+              </UFormField>
+              <div class="flex items-end gap-2">
+                <UFormField :label="S.conceptSections.to" class="flex-1">
+                  <UInput v-model="ns._endRaw" type="date" class="w-full" />
+                </UFormField>
+                <UButton icon="i-lucide-x" size="sm" color="neutral" variant="ghost" class="mb-0.5" @click="removeNewSection(idx)" />
+              </div>
+            </div>
+          </div>
+        </UCard>
+
+        <!-- Contract date changes -->
+        <UCard>
+          <template #header>
+            <div class="flex items-center gap-2 font-medium">
+              <UIcon name="i-lucide-calendar" class="size-4 text-muted" />
+              Cambio de fechas del contrato
+            </div>
+          </template>
+          <p class="mb-4 text-xs text-muted">Deja en blanco los campos que no cambien. Las nuevas fechas reemplazan las del contrato al aprobarse.</p>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <UFormField label="Nueva fecha de inicio">
+              <UInput v-model="newContractStartRaw" type="date" class="w-full [&_input]:text-success" />
+              <template v-if="data?.contract?.startDate" #hint>
+                Actual: {{ formatDate(data.contract.startDate) }}
+              </template>
+            </UFormField>
+            <UFormField label="Nueva fecha de término">
+              <UInput v-model="newContractEndRaw" type="date" class="w-full [&_input]:text-success" />
+              <template v-if="data?.contract?.endDate" #hint>
+                Actual: {{ formatDate(data.contract.endDate) }}
+              </template>
+            </UFormField>
+          </div>
+        </UCard>
+
         <!-- New concepts -->
         <UCard :ui="{ body: 'p-0 sm:p-0' }">
           <template #header>
@@ -533,9 +660,10 @@ async function onSave() {
                       v-model="nc.sectionId"
                       :items="[
                         { label: '— Sin sección —', value: null },
-                        ...(data?.sections ?? []).map(s => ({ label: `${s.specificationNumber} ${s.description}`, value: s.id }))
+                        ...(data?.sections ?? []).map(s => ({ label: `${s.specificationNumber} ${s.description}`, value: s.id })),
+                        ...newSections.map((ns, i) => ({ label: `[Nueva] ${ns.specificationNumber || i+1} ${ns.description}`, value: `new:${i}` })),
                       ]"
-                      class="w-44"
+                      class="w-52"
                     />
                   </td>
                   <td class="px-2 py-2">

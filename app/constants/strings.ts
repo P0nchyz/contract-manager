@@ -386,7 +386,13 @@ export const S = {
     },
     validation: {
       descriptionRequired: 'Escribe la descripción del convenio.',
-      noChanges: 'Agrega al menos un cambio a un concepto o un concepto nuevo.',
+      noChanges: 'Agrega al menos un cambio a un concepto, concepto nuevo, sección nueva o cambio de fechas.',
+    },
+    contractDates: {
+      title: 'Cambio de fechas del contrato',
+      newStart: 'Nueva fecha de inicio',
+      newEnd: 'Nueva fecha de término',
+      current: 'Actual',
     },
   },
   reception: {
@@ -558,6 +564,10 @@ export const S = {
       descRequired: 'Descripción requerida',
       datesRequired: 'El periodo de la sección es requerido',
       endBeforeStart: 'La fecha de término debe ser posterior al inicio',
+      startBeforeContract: 'El inicio de la sección no puede ser anterior al inicio del contrato',
+      endAfterContract: 'El término de la sección no puede ser posterior al término del contrato',
+      startBeforeSection: 'El inicio del concepto no puede ser anterior al inicio de su sección',
+      endAfterSection: 'El término del concepto no puede ser posterior al término de su sección',
       conceptOutOfRange: 'Hay conceptos fuera del periodo de la sección',
     },
   },

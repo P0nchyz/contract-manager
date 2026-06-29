@@ -3,6 +3,7 @@ import type {
   AgreementId,
   AgreementStatus,
   ConceptId,
+  ConceptSectionId,
   ContractId,
   FileId,
   FiniquitoStatementId,
@@ -29,6 +30,7 @@ export interface NewConceptDraft {
   unit: string
   unitPrice: Money
   contractedQuantity: number
+  sectionId?: ConceptSectionId | null
   // Optional schedule entry for this new concept
   startDate?: Date
   endDate?: Date
@@ -52,6 +54,14 @@ export interface ConceptChange {
  * A modification agreement (convenio modificatorio). Created by Resident or
  * Superintendent. Same workflow as estimates minus `paid`.
  */
+export interface NewSectionDraft {
+  specificationNumber: string
+  description: string
+  startDate: Date
+  endDate: Date
+  order: number
+}
+
 export interface ModificationAgreement {
   id: AgreementId
   contractId: ContractId
@@ -62,6 +72,11 @@ export interface ModificationAgreement {
   conceptChanges: ConceptChange[]
   // New concepts to be added to the catalog on approval.
   newConcepts: NewConceptDraft[]
+  // New sections to be added to the catalog on approval.
+  newSections: NewSectionDraft[]
+  // Contract date change (applied on approval).
+  newContractEndDate: Date | null
+  newContractStartDate: Date | null
   // Aggregate deltas — derived from conceptChanges + newConcepts on save.
   amountDelta: Money | null
   timeDeltaDays: number | null
