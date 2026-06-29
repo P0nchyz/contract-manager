@@ -36,26 +36,34 @@ const userName = (id: UserId | null | undefined): string =>
 const st = computed(() => estimate.value?.status ?? null)
 const mySlot = computed(() => estimate.value?.signatures.find((s) => s.role === role.value) ?? null)
 
+// Edit: only draft (superintendent) and with_notes (superintendent to revise).
+// Rejected is final — no edits allowed.
+const canEdit = computed(
+  () => can('estimate:create') && (st.value === 'draft' || st.value === 'with_notes'),
+)
+// Submit: superintendent sends a draft or re-sends after with_notes edit.
 const canSubmit = computed(() => st.value === 'draft' && can('estimate:create'))
-const canApprove = computed(() => st.value === 'submitted' && can('estimate:approve'))
-const canReturn = computed(() => st.value === 'submitted' && can('estimate:approve'))
-const canReject = computed(() => st.value === 'submitted' && can('estimate:reject'))
-const canPay = computed(() => st.value === 'approved' && can('estimate:pay'))
+// Sign = approve: all three roles sign a submitted estimate; the last signature
+// auto-transitions it to approved. Signing is NOT allowed on with_notes.
 const canSign = computed(
   () =>
+    st.value === 'submitted' &&
     can('sign') &&
     !!mySlot.value &&
-    mySlot.value.status === 'pending' &&
-    ['submitted', 'with_notes', 'approved'].includes(st.value ?? ''),
+    mySlot.value.status === 'pending',
 )
-const hasAnyAction = computed(
-  () =>
-    canSubmit.value ||
-    canApprove.value ||
-    canReturn.value ||
-    canReject.value ||
-    canPay.value ||
-    canSign.value,
+// Return with notes: supervisor only, while submitted.
+const canReturn = computed(() => st.value === 'submitted' && can('estimate:returnWithNotes'))
+// Reject: resident only, while submitted. Rejection is permanent.
+const canReject = computed(() => st.value === 'submitted' && can('estimate:reject'))
+// Pay: financial only, once approved.
+const canPay = computed(() => st.value === 'approved' && can('estimate:pay'))
+
+// Inline review card (return + reject note entry) only for submitted.
+const showReview = computed(() => st.value === 'submitted' && (canReturn.value || canReject.value))
+// Sticky bar shows whenever there is at least one direct action available.
+const hasBarAction = computed(
+  () => canEdit.value || canSubmit.value || canSign.value || canPay.value,
 )
 
 // Latest returned/rejected note, surfaced as a banner.
@@ -87,32 +95,30 @@ async function run(fn: () => Promise<unknown>) {
 }
 
 const submit = () => run(() => repos.estimates.submit(estimateId.value))
-const approve = () => run(() => repos.estimates.approve(estimateId.value))
 const markPaid = () => run(() => repos.estimates.markPaid(estimateId.value))
+// sign() calls repos.estimates.sign; the mock auto-approves once all three slots are signed.
 const sign = () => run(() => repos.estimates.sign(estimateId.value))
 
-// Note modal (return / reject share one dialog)
-const noteModal = reactive({ open: false, kind: null as 'return' | 'reject' | null, text: '', error: '' })
-function openNote(kind: 'return' | 'reject') {
-  noteModal.kind = kind
-  noteModal.text = ''
-  noteModal.error = ''
-  noteModal.open = true
-}
-async function confirmNote() {
-  if (!noteModal.text.trim()) {
-    noteModal.error = D.note.required
+// Review notes are typed inline in the viewer (no modal).
+const reviewNote = ref('')
+const reviewError = ref<string | null>(null)
+function withNote(action: (id: string, note: string) => Promise<unknown>) {
+  const note = reviewNote.value.trim()
+  if (!note) {
+    reviewError.value = D.note.required
     return
   }
-  const kind = noteModal.kind
-  const note = noteModal.text.trim()
-  noteModal.open = false
-  await run(() =>
-    kind === 'reject'
-      ? repos.estimates.reject(estimateId.value, note)
-      : repos.estimates.returnWithNotes(estimateId.value, note),
-  )
+  reviewError.value = null
+  reviewNote.value = ''
+  return run(() => action(estimateId.value, note))
 }
+const returnWithNotes = () => withNote(repos.estimates.returnWithNotes)
+const reject = () => withNote(repos.estimates.reject)
+
+const editLink = computed(() => ({
+  path: `/contracts/${contractId.value}/estimates/new`,
+  query: { edit: estimateId.value },
+}))
 </script>
 
 <template>
@@ -290,6 +296,41 @@ async function confirmNote() {
           </dl>
         </UCard>
 
+        <!-- Inline review: supervisor returns / resident rejects, notes typed here -->
+        <UCard v-if="showReview">
+          <template #header>
+            <div class="flex items-center gap-2 font-medium">
+              <UIcon name="i-lucide-clipboard-pen" class="size-4 text-muted" />
+              {{ D.review.title }}
+            </div>
+          </template>
+          <UFormField :label="D.note.label" :error="reviewError || undefined">
+            <UTextarea v-model="reviewNote" :rows="4" class="w-full" :placeholder="D.note.placeholder" />
+          </UFormField>
+          <div class="mt-3 flex flex-wrap justify-end gap-3">
+            <UButton
+              v-if="canReject"
+              color="error"
+              variant="soft"
+              icon="i-lucide-x-circle"
+              :disabled="busy"
+              @click="reject"
+            >
+              {{ D.actions.reject }}
+            </UButton>
+            <UButton
+              v-if="canReturn"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-corner-up-left"
+              :disabled="busy"
+              @click="returnWithNotes"
+            >
+              {{ D.actions.returnWithNotes }}
+            </UButton>
+          </div>
+        </UCard>
+
         <!-- Signatures + History -->
         <div class="grid gap-4 lg:grid-cols-2">
           <UCard>
@@ -400,81 +441,37 @@ async function confirmNote() {
 
         <!-- Sticky workflow action bar -->
         <div
-          v-if="hasAnyAction"
-          class="sticky bottom-0 -mx-4 mt-2 flex flex-wrap items-center justify-end gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
+          v-if="hasBarAction"
+          class="sticky bottom-0 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
         >
-          <UButton
-            v-if="canReject"
-            color="error"
-            variant="soft"
-            icon="i-lucide-x-circle"
-            :disabled="busy"
-            @click="openNote('reject')"
-          >
-            {{ D.actions.reject }}
+          <UButton v-if="canEdit" color="neutral" variant="outline" icon="i-lucide-pencil" :to="editLink">
+            {{ D.actions.edit }}
           </UButton>
-          <UButton
-            v-if="canReturn"
-            color="warning"
-            variant="soft"
-            icon="i-lucide-corner-up-left"
-            :disabled="busy"
-            @click="openNote('return')"
-          >
-            {{ D.actions.returnWithNotes }}
-          </UButton>
-          <UButton
-            v-if="canSign"
-            color="primary"
-            variant="outline"
-            icon="i-lucide-pen-line"
-            :loading="busy"
-            @click="sign"
-          >
-            {{ D.actions.sign }}
-          </UButton>
-          <UButton v-if="canSubmit" icon="i-lucide-send" :loading="busy" @click="submit">
-            {{ D.actions.submit }}
-          </UButton>
-          <UButton v-if="canApprove" color="success" icon="i-lucide-check" :loading="busy" @click="approve">
-            {{ D.actions.approve }}
-          </UButton>
-          <UButton v-if="canPay" color="info" icon="i-lucide-banknote" :loading="busy" @click="markPaid">
-            {{ D.actions.markPaid }}
-          </UButton>
+          <div v-else />
+
+          <div class="flex flex-wrap items-center justify-end gap-3">
+            <UButton v-if="canSubmit" icon="i-lucide-send" :loading="busy" @click="submit">
+              {{ D.actions.submit }}
+            </UButton>
+            <!-- Sign = approve: shown to all three signing roles while submitted and slot is pending.
+                 The last signature auto-transitions the estimate to approved. -->
+            <UButton
+              v-if="canSign"
+              color="success"
+              icon="i-lucide-pen-line"
+              :loading="busy"
+              @click="sign"
+            >
+              {{ D.actions.sign }}
+            </UButton>
+            <UButton v-if="canPay" color="info" icon="i-lucide-banknote" :loading="busy" @click="markPaid">
+              {{ D.actions.markPaid }}
+            </UButton>
+          </div>
         </div>
 
-        <!-- Note modal (return / reject) -->
-        <UModal
-          v-model:open="noteModal.open"
-          :title="noteModal.kind === 'reject' ? D.note.rejectTitle : D.note.returnTitle"
-        >
-          <template #body>
-            <UFormField :label="D.note.label" :error="noteModal.error || undefined">
-              <UTextarea
-                v-model="noteModal.text"
-                :rows="4"
-                class="w-full"
-                :placeholder="D.note.placeholder"
-                autofocus
-              />
-            </UFormField>
-          </template>
-          <template #footer>
-            <div class="flex w-full justify-end gap-3">
-              <UButton color="neutral" variant="ghost" @click="noteModal.open = false">
-                {{ S.common.cancel }}
-              </UButton>
-              <UButton
-                :color="noteModal.kind === 'reject' ? 'error' : 'warning'"
-                icon="i-lucide-check"
-                @click="confirmNote"
-              >
-                {{ S.common.confirm }}
-              </UButton>
-            </div>
-          </template>
-        </UModal>
+        <!-- (note entry is inline in the review card above) -->
+
       </div>
     </template>
   </UDashboardPanel>

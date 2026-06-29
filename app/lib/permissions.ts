@@ -14,9 +14,12 @@ export type Permission =
   | 'contract:assign'
   | 'estimate:create'
   | 'estimate:view'
-  | 'estimate:approve' // approve / return-with-notes (supervisor)
-  | 'estimate:reject' // reject (resident)
-  | 'estimate:pay' // mark paid (financial)
+  // NOTE: no 'estimate:approve' — signing IS approving.
+  // All three signing roles must sign a submitted estimate; once all slots are
+  // filled the mock auto-transitions status to 'approved'.
+  | 'estimate:returnWithNotes' // supervisor only: return to superintendent for revision
+  | 'estimate:reject'          // resident only: permanently reject
+  | 'estimate:pay'             // financial only: mark paid
   | 'logNote:create'
   | 'agreement:create'
   | 'agreement:approve'
@@ -44,10 +47,11 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'sign', 'financial:view',
   ],
   supervisor: [
-    'estimate:view', 'estimate:approve',
+    'estimate:view', 'estimate:returnWithNotes',
     'logNote:create', 'agreement:approve',
     'file:upload', 'sign', 'financial:view',
   ],
+  // Financial only sees approved/paid estimates (enforced in listByContract).
   financial: ['estimate:view', 'estimate:pay', 'financial:view'],
 }
 

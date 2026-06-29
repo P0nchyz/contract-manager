@@ -233,14 +233,15 @@ export const S = {
     linkedLogNotes: 'Notas de bitácora vinculadas',
     evidence: 'Evidencias',
     // Workflow action buttons
+    // NOTE: 'approve' is removed — signing IS approving. The last of the three
+    // required signatures auto-transitions the estimate to 'approved'.
     actions: {
       edit: 'Editar',
       submit: 'Enviar a revisión',
-      approve: 'Aprobar',
       returnWithNotes: 'Devolver con notas',
       reject: 'Rechazar',
       markPaid: 'Marcar como pagada',
-      sign: 'Firmar',
+      sign: 'Firmar y aprobar',
     },
     // Note modal (return / reject)
     note: {

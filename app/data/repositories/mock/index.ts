@@ -204,16 +204,25 @@ export function createMockRepositories(): Repositories {
         db.concepts.push(concept)
         return clone(concept)
       },
+      async delete(conceptId) {
+        await delay()
+        const idx = db.concepts.findIndex((c) => c.id === conceptId)
+        if (idx === -1) throw notFound('Concepto')
+        db.concepts.splice(idx, 1)
+      },
     },
 
     // --- estimates ---------------------------------------------------------
     estimates: {
       async listByContract(contractId) {
         await delay()
-        const isResident = currentUser().role === 'resident'
-        const list = db.estimates.filter(
-          (e) => e.contractId === contractId && (isResident || e.status !== 'draft'),
-        )
+        const user = currentUser()
+        const list = db.estimates.filter((e) => {
+          if (e.contractId !== contractId) return false
+          if (user.role === 'financial') return e.status === 'approved' || e.status === 'paid'
+          if (user.role !== 'resident') return e.status !== 'draft'
+          return true // resident sees everything including drafts
+        })
         return clone(list)
       },
       async getById(id) {
@@ -266,8 +275,8 @@ export function createMockRepositories(): Repositories {
           summary,
           signatures: pendingSignatures(),
           history: [event('created')],
-          evidenceFileIds: [],
-          linkedLogNoteIds: [],
+          evidenceFileIds: input.evidenceFileIds ?? [],
+          linkedLogNoteIds: input.linkedLogNoteIds ?? [],
           createdById: currentUserId,
           createdAt: now,
           updatedAt: now,
@@ -279,7 +288,11 @@ export function createMockRepositories(): Repositories {
         await delay()
         const e = db.estimates.find((x) => x.id === id)
         if (!e) throw notFound('Estimación')
-        if (e.status !== 'draft') throw new RepositoryError(409, 'Solo se editan borradores', 'not_draft')
+        const EDITABLE = ['draft', 'with_notes'] // rejected is final — cannot be re-edited
+        if (!EDITABLE.includes(e.status)) {
+          throw new RepositoryError(409, 'Solo se editan borradores o estimaciones devueltas con notas', 'not_editable')
+        }
+        const wasReturned = e.status === 'with_notes'
         const contract = db.contracts.find((c) => c.id === e.contractId)!
         const catalog = db.concepts.filter((c) => c.contractId === e.contractId)
         const prior = db.estimates.filter((x) => x.contractId === e.contractId && x.id !== e.id)
@@ -295,6 +308,13 @@ export function createMockRepositories(): Repositories {
         e.summary = buildSummary(e.lineItems, { ...DEFAULT_RATES, anticipoPercentage: contract.anticipoPercentage })
         e.periodStart = input.periodStart
         e.periodEnd = input.periodEnd
+        if (input.evidenceFileIds) e.evidenceFileIds = input.evidenceFileIds
+        if (input.linkedLogNoteIds) e.linkedLogNoteIds = input.linkedLogNoteIds
+        // Editing a returned/rejected estimate sends it back to draft (loop closed).
+        if (wasReturned) {
+          e.status = 'draft'
+          e.history.push(event('reopened'))
+        }
         e.updatedAt = new Date()
         return clone(e)
       },
@@ -324,8 +344,18 @@ export function createMockRepositories(): Repositories {
         await delay()
         const e = db.estimates.find((x) => x.id === id)
         if (!e) throw notFound('Estimación')
+        // Signing is only allowed on submitted estimates.
+        if (e.status !== 'submitted') {
+          throw new RepositoryError(409, 'Solo se firma una estimación enviada', 'wrong_status')
+        }
         applySignature(e.signatures)
         e.history.push(event('signed'))
+        // Auto-approve once every signing slot is filled.
+        const allSigned = e.signatures.every((s) => s.status === 'signed')
+        if (allSigned) {
+          e.status = 'approved'
+          e.history.push(event('approved'))
+        }
         e.updatedAt = new Date()
         return clone(e)
       },
