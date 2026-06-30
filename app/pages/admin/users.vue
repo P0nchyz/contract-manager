@@ -3,6 +3,7 @@
 import { ref, computed } from 'vue'
 import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
+import { resetMockDb } from '~/data/repositories'
 import type { Role } from '~/data/models'
 
 definePageMeta({ requiredPermission: 'admin:users' })
@@ -119,6 +120,12 @@ function openCorpForm() {
   showCorpForm.value = true
 }
 
+// ─── Dev: reset mock DB ──────────────────────────────────────────────────────
+function resetAndReload() {
+  resetMockDb()
+  window.location.reload()
+}
+
 async function createCorporation() {
   if (!canCreateCorp.value) return
   corpSaving.value = true
@@ -144,22 +151,32 @@ async function createCorporation() {
     <template #header>
       <UDashboardNavbar :title="A.title">
         <template #right>
-          <UButton
-            v-if="activeTab === 'users'"
-            icon="i-lucide-user-plus"
-            size="sm"
-            @click="openUserForm"
-          >
-            {{ A.users.new }}
-          </UButton>
-          <UButton
-            v-else
-            icon="i-lucide-building-2"
-            size="sm"
-            @click="openCorpForm"
-          >
-            {{ A.corporations.new }}
-          </UButton>
+          <div class="flex items-center gap-2">
+            <UButton
+              icon="i-lucide-rotate-ccw"
+              size="sm"
+              color="neutral"
+              variant="ghost"
+              title="Reiniciar datos de prueba"
+              @click="resetAndReload"
+            />
+            <UButton
+              v-if="activeTab === 'users'"
+              icon="i-lucide-user-plus"
+              size="sm"
+              @click="openUserForm"
+            >
+              {{ A.users.new }}
+            </UButton>
+            <UButton
+              v-else
+              icon="i-lucide-building-2"
+              size="sm"
+              @click="openCorpForm"
+            >
+              {{ A.corporations.new }}
+            </UButton>
+          </div>
         </template>
       </UDashboardNavbar>
     </template>

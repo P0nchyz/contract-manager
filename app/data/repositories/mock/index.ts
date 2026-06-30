@@ -53,9 +53,56 @@ const clone = <T>(v: T): T => structuredClone(v)
 const counters: Record<string, number> = {}
 const genId = (prefix: string) => `${prefix}-${(counters[prefix] = (counters[prefix] ?? 100) + 1)}`
 
+// ─── LocalStorage persistence ──────────────────────────────────────────────
+// Dates are tagged as { $date: isoString } so they survive JSON round-trips.
+const DATE_TAG = '$date'
+
+function replacer(_key: string, value: unknown): unknown {
+  if (value instanceof Date) return { [DATE_TAG]: value.toISOString() }
+  return value
+}
+
+function reviver(_key: string, value: unknown): unknown {
+  if (value && typeof value === 'object' && DATE_TAG in (value as object)) {
+    return new Date((value as Record<string, string>)[DATE_TAG])
+  }
+  return value
+}
+
+const STORAGE_KEY = 'mock-db-v1'
+
+function saveDb(db: object): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(db, replacer))
+  } catch {
+    // localStorage may be full or unavailable — fail silently
+  }
+}
+
+function loadDb<T extends object>(fallback: T): T {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return fallback
+    return JSON.parse(raw, reviver) as T
+  } catch {
+    return fallback
+  }
+}
+
+// Debounce saves so rapid mutations don't thrash localStorage
+let _saveTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleSave(db: object): void {
+  if (_saveTimer) clearTimeout(_saveTimer)
+  _saveTimer = setTimeout(() => saveDb(db), 200)
+}
+
+export function resetMockDb(): void {
+  localStorage.removeItem(STORAGE_KEY)
+}
+
 export function createMockRepositories(): Repositories {
-  // Mutable working copies of the seed.
-  const db = {
+  // Build the seed fallback, then overlay with any persisted state from localStorage.
+  const seedDb = {
     corporations: clone(seed.corporations),
     users: clone(seed.users),
     passwords: { 'U-ADMIN': 'admin', 'U-RES': 'resident', 'U-SUP': 'super', 'U-SVR': 'supervisor', 'U-FIN': 'financial' } as Record<string, string>,
@@ -74,6 +121,7 @@ export function createMockRepositories(): Repositories {
     evidence: clone(seed.evidenceNotes),
     alerts: clone(seed.alerts),
   }
+  const db = loadDb(seedDb)
 
   // Mock session — set on login; defaults to the resident for convenience.
   let currentUserId: UserId = 'U-RES'
@@ -82,6 +130,9 @@ export function createMockRepositories(): Repositories {
     if (!u) throw new RepositoryError(401, 'No autenticado', 'unauthenticated')
     return u
   }
+
+  // Persist the db after every mutating operation.
+  const save = () => scheduleSave(db)
 
   // --- workflow helpers ----------------------------------------------------
   const pendingSignatures = (): Signature[] =>
@@ -174,6 +225,7 @@ export function createMockRepositories(): Repositories {
           order: si.order ?? i,
         }))
         db.conceptSections.push(...createdSections)
+        save()
 
         // Create initial concepts. sectionId in input is a numeric index string (e.g. "0", "1")
         // pointing into initialSections/createdSections. Resolve it to the generated id.
@@ -192,6 +244,7 @@ export function createMockRepositories(): Repositories {
           return { id: genId('CN'), contractId, ...ci, sectionId: resolvedSectionId }
         })
         db.concepts.push(...createdConcepts)
+        save()
 
         const amount = createdConcepts.reduce(
           (s, c) => s + c.unitPrice * c.contractedQuantity,
@@ -220,6 +273,7 @@ export function createMockRepositories(): Repositories {
           updatedAt: now,
         }
         db.contracts.push(contract)
+        save()
 
         // Create schedule from the supplied items, resolving conceptIndex → conceptId.
         const scheduleItems = input.scheduleItems.map((si) => {
@@ -238,6 +292,7 @@ export function createMockRepositories(): Repositories {
           }
         })
         db.schedules.push({ id: genId('SCH'), contractId, items: scheduleItems })
+        save()
 
         // Seed the three predefined folders every new contract gets.
         db.folders.push(
@@ -245,6 +300,7 @@ export function createMockRepositories(): Repositories {
           { id: genId('FD'), contractId, name: 'Evidencias',              parentId: null, kind: 'evidence',  predefined: true },
           { id: genId('FD'), contractId, name: 'Comprobantes de pago',    parentId: null, kind: 'payments',  predefined: true },
         )
+        save()
 
         return clone(contract)
       },
@@ -350,6 +406,7 @@ export function createMockRepositories(): Repositories {
         await delay()
         const section: ConceptSection = { id: genId('CS') as ConceptSection['id'], contractId, ...input }
         db.conceptSections.push(section)
+        save()
         return clone(section)
       },
       async delete(conceptId) {
@@ -432,6 +489,7 @@ export function createMockRepositories(): Repositories {
           updatedAt: now,
         }
         db.estimates.push(estimate)
+        save()
         return clone(estimate)
       },
       async updateDraft(id, input) {
@@ -471,6 +529,7 @@ export function createMockRepositories(): Repositories {
           e.history.push(event('reopened'))
         }
         e.updatedAt = new Date()
+        save()
         return clone(e)
       },
       async submit(id) {
@@ -493,6 +552,7 @@ export function createMockRepositories(): Repositories {
         if (paymentEvidenceFileId) e.evidenceFileIds.push(paymentEvidenceFileId)
         e.history.push(event('paid'))
         e.updatedAt = new Date()
+        save()
         return clone(e)
       },
       async sign(id) {
@@ -512,6 +572,7 @@ export function createMockRepositories(): Repositories {
           e.history.push(event('approved'))
         }
         e.updatedAt = new Date()
+        save()
         return clone(e)
       },
     },
@@ -549,6 +610,7 @@ export function createMockRepositories(): Repositories {
           createdAt: new Date(),
         }
         db.logNotes.push(note)
+        save()
         return clone(note)
       },
       async sign(id) {
@@ -557,6 +619,7 @@ export function createMockRepositories(): Repositories {
         if (!n) throw notFound('Nota de bitácora')
         applySignature(n.signatures)
         if (n.signatures.every((s) => s.status === 'signed')) n.locked = true
+        save()
         return clone(n)
       },
     },
@@ -597,6 +660,7 @@ export function createMockRepositories(): Repositories {
           updatedAt: new Date(),
         }
         db.agreements.push(a)
+        save()
         return clone(a)
       },
       async update(id, patch) {
@@ -652,6 +716,7 @@ export function createMockRepositories(): Repositories {
               contract.updatedAt = new Date()
             }
           }
+          save()
           // Create new sections from this agreement.
           const createdAgSections: ConceptSection[] = (a.newSections ?? []).map((ns, i) => {
             const existingCount = db.conceptSections.filter(s => s.contractId === a.contractId).length
@@ -700,6 +765,7 @@ export function createMockRepositories(): Repositories {
               ...conceptFields,
             }
             db.concepts.push(newConcept)
+        save()
             const schedule = db.schedules.find((s) => s.contractId === a.contractId)
             if (schedule && startDate && endDate) {
               schedule.items.push({
@@ -720,6 +786,7 @@ export function createMockRepositories(): Repositories {
           // (newContractStartDate / newContractEndDate) are applied above.
         }
         a.updatedAt = new Date()
+        save()
         return clone(a)
       },
     },
@@ -749,6 +816,7 @@ export function createMockRepositories(): Repositories {
           createdAt: new Date(),
         }
         db.finiquito.push(entity)
+        save()
         return clone(entity)
       },
     },
@@ -767,6 +835,7 @@ export function createMockRepositories(): Repositories {
           const item = s.items.find((i) => i.id === itemId)
           if (item) {
             Object.assign(item, patch)
+            save()
             return clone(item)
           }
         }
@@ -800,6 +869,7 @@ export function createMockRepositories(): Repositories {
         await delay()
         const folder = { id: genId('FD'), contractId: input.contractId, name: input.name, parentId: input.parentId, kind: 'custom' as const, predefined: false }
         db.folders.push(folder)
+        save()
         return clone(folder)
       },
       async renameFolder(folderId, name) {
@@ -808,6 +878,7 @@ export function createMockRepositories(): Repositories {
         if (!f) throw notFound('Carpeta')
         if (f.predefined) throw new RepositoryError(403, 'No se puede renombrar una carpeta predefinida', 'predefined')
         f.name = name
+        save()
         return clone(f)
       },
       async deleteFolder(folderId) {
@@ -823,7 +894,9 @@ export function createMockRepositories(): Repositories {
         }
         collect(folderId)
         db.folders = db.folders.filter((x) => !toDelete.has(x.id))
+        save()
         db.files   = db.files.filter((x) => !toDelete.has(x.folderId))
+        save()
       },
       async upload(input: UploadFileInput, onProgress?: UploadProgress) {
         for (let p = 0.2; p < 1; p += 0.2) {
@@ -842,6 +915,7 @@ export function createMockRepositories(): Repositories {
           downloadUrl: '#', // replaced by getDownloadUrl in production
         }
         db.files.push(file)
+        save()
         onProgress?.(1)
         return clone(file)
       },
@@ -853,6 +927,7 @@ export function createMockRepositories(): Repositories {
           throw new RepositoryError(403, 'Solo puedes eliminar archivos que tú subiste', 'forbidden')
         }
         db.files = db.files.filter((x) => x.id !== fileId)
+        save()
       },
       async getDownloadUrl(fileId) {
         await delay()
@@ -897,6 +972,7 @@ export function createMockRepositories(): Repositories {
           createdAt: new Date(),
         }
         db.evidence.push(note)
+        save()
         return clone(note)
       },
     },
@@ -910,7 +986,7 @@ export function createMockRepositories(): Repositories {
       async markRead(id) {
         await delay()
         const a = db.alerts.find((x) => x.id === id)
-        if (a) a.read = true
+        if (a) { a.read = true; save() }
       },
     },
 
@@ -933,7 +1009,9 @@ export function createMockRepositories(): Repositories {
         }
         const user: User = { id: genId('U'), fullName: input.fullName, username: input.username, email: input.email ?? null, role: input.role, corporationId: input.corporationId ?? null, active: true }
         db.users.push(user)
+        save()
         if (input.password) db.passwords[user.id] = input.password
+        save()
         return clone(user)
       },
       async update(id, patch) {
@@ -941,6 +1019,7 @@ export function createMockRepositories(): Repositories {
         const u = db.users.find((x) => x.id === id)
         if (!u) throw notFound('Usuario')
         Object.assign(u, patch)
+        save()
         return clone(u)
       },
       async setActive(id, active) {
@@ -948,6 +1027,7 @@ export function createMockRepositories(): Repositories {
         const u = db.users.find((x) => x.id === id)
         if (!u) throw notFound('Usuario')
         u.active = active
+        save()
         return clone(u)
       },
       async setPassword() {
@@ -963,6 +1043,7 @@ export function createMockRepositories(): Repositories {
         await delay()
         const corp: Corporation = { id: genId('CORP'), name: input.name, rfc: input.rfc ?? null, superintendentId: input.superintendentId ?? null, active: true }
         db.corporations.push(corp)
+        save()
         return clone(corp)
       },
       async update(id, patch) {
@@ -970,6 +1051,7 @@ export function createMockRepositories(): Repositories {
         const c = db.corporations.find((x) => x.id === id)
         if (!c) throw notFound('Corporación')
         Object.assign(c, patch)
+        save()
         return clone(c)
       },
     },
@@ -990,6 +1072,7 @@ export function createMockRepositories(): Repositories {
     item.status = nextStatus
     item.history.push(event(action, note))
     item.updatedAt = new Date()
+    save()
     return clone(item)
   }
 }
@@ -1036,6 +1119,7 @@ function makeCloseFlow<T extends CloseEntity>(
         createdAt: new Date(),
       } as unknown as T
       arr.push(entity)
+      save()
       return cloneLocal(entity)
     },
     async submit(id: string) {
@@ -1043,6 +1127,8 @@ function makeCloseFlow<T extends CloseEntity>(
       const e = find(id)
       e.status = 'submitted'
       e.history.push(event('submitted'))
+      save()
+      save()
       return cloneLocal(e)
     },
     async approve(id: string) {
@@ -1050,6 +1136,8 @@ function makeCloseFlow<T extends CloseEntity>(
       const e = find(id)
       e.status = 'approved'
       e.history.push(event('approved'))
+      save()
+      save()
       return cloneLocal(e)
     },
     async returnWithNotes(id: string, note: string) {
@@ -1057,6 +1145,8 @@ function makeCloseFlow<T extends CloseEntity>(
       const e = find(id)
       e.status = 'with_notes'
       e.history.push(event('returned_with_notes', note))
+      save()
+      save()
       return cloneLocal(e)
     },
     async reject(id: string, note: string) {
@@ -1064,6 +1154,8 @@ function makeCloseFlow<T extends CloseEntity>(
       const e = find(id)
       e.status = 'rejected'
       e.history.push(event('rejected', note))
+      save()
+      save()
       return cloneLocal(e)
     },
     async sign(id: string) {
@@ -1080,6 +1172,7 @@ function makeCloseFlow<T extends CloseEntity>(
         e.status = 'approved'
         e.history.push(event('approved'))
       }
+      save()
       return cloneLocal(e)
     },
   }

@@ -7,7 +7,7 @@
  */
 import { DEFAULT_API_BASE_URL, DEFAULT_DATA_SOURCE, type DataSource } from '../config'
 import { createHttpClient, type HttpClient } from '../http/client'
-import { createMockRepositories } from './mock'
+import { createMockRepositories, resetMockDb } from './mock'
 import { createHttpRepositories } from './http'
 import type { Repositories } from './types'
 
@@ -35,3 +35,4 @@ export function createRepositories(opts: CreateRepositoriesOptions = {}): Reposi
 }
 
 export * from './types'
+export { resetMockDb }
