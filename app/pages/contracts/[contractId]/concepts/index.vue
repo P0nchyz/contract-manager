@@ -5,7 +5,7 @@ import { agreementStatusDisplay } from '~/utils/format'
 
 definePageMeta({ requiredPermission: 'estimate:view' })
 
-const C  = S.conceptCatalog
+const C = S.conceptCatalog
 const CS = S.conceptSections
 
 const route = useRoute()
@@ -24,12 +24,12 @@ const { data, status, error, refresh } = await useAsyncData(
     ])
 
     // Roll up executed quantities/amounts from non-draft, non-rejected estimates
-    const executedQty: Record<string, number>    = {}
+    const executedQty: Record<string, number> = {}
     const executedAmount: Record<string, number> = {}
     for (const est of estimates) {
       if (est.status === 'draft' || est.status === 'rejected') continue
       for (const li of est.lineItems) {
-        executedQty[li.conceptId]    = (executedQty[li.conceptId]    ?? 0) + li.inThisEstimate
+        executedQty[li.conceptId] = (executedQty[li.conceptId] ?? 0) + li.inThisEstimate
         executedAmount[li.conceptId] = (executedAmount[li.conceptId] ?? 0) + li.totalAmount
       }
     }
@@ -72,14 +72,8 @@ const totalExecutedAmount = computed(() =>
     <template #header>
       <UDashboardNavbar :title="C.title">
         <template #right>
-          <UButton
-            v-if="canCreateAgreement"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-file-plus-2"
-            :to="`/contracts/${contractId}/agreements/new`"
-            size="sm"
-          >
+          <UButton v-if="canCreateAgreement" color="neutral" variant="outline" icon="i-lucide-file-plus-2"
+            :to="`/contracts/${contractId}/agreements/new`" size="sm">
             {{ S.contractInfo.agreements.new }}
           </UButton>
         </template>
@@ -87,35 +81,26 @@ const totalExecutedAmount = computed(() =>
     </template>
 
     <template #body>
-      <UAlert
-        v-if="error"
-        color="error"
-        variant="soft"
-        icon="i-lucide-alert-triangle"
-        :title="S.common.error"
-        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
-      />
+      <UAlert v-if="error" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="S.common.error"
+        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]" />
 
       <div v-else-if="status === 'pending'" class="space-y-3">
         <USkeleton class="h-10 w-full rounded-lg" />
         <USkeleton class="h-64 w-full rounded-lg" />
       </div>
 
-      <template v-else-if="data">
-        <UAlert
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-lock"
-          :title="C.readonlyNotice"
-          :actions="canCreateAgreement ? [{ label: S.contractInfo.agreements.new, color: 'neutral', variant: 'subtle', to: `/contracts/${contractId}/agreements/new` }] : undefined"
-        />
+      <div v-else-if="data" class="space-y-6">
+        <UAlert color="neutral" variant="soft" icon="i-lucide-lock" :title="C.readonlyNotice"
+          :actions="canCreateAgreement ? [{ label: S.contractInfo.agreements.new, color: 'neutral', variant: 'subtle', to: `/contracts/${contractId}/agreements/new` }] : undefined" />
 
         <div class="flex items-center gap-3">
           <UInput v-model="search" :placeholder="C.search" icon="i-lucide-search" class="max-w-xs" />
-          <span class="text-sm text-muted">{{ data.concepts.length }} conceptos · {{ data.sections.length }} secciones</span>
+          <span class="text-sm text-muted">{{ data.concepts.length }} conceptos · {{ data.sections.length }}
+            secciones</span>
         </div>
 
-        <div v-if="!data.concepts.length" class="rounded-lg border border-dashed border-default py-16 text-center text-sm text-muted">
+        <div v-if="!data.concepts.length"
+          class="rounded-lg border border-dashed border-default py-16 text-center text-sm text-muted">
           {{ C.empty }}
         </div>
 
@@ -161,23 +146,22 @@ const totalExecutedAmount = computed(() =>
                   </tr>
 
                   <!-- Concept rows within this section -->
-                  <tr
-                    v-for="c in group.concepts"
-                    :key="c.id"
-                    class="divide-x-0 border-t border-default/50 hover:bg-elevated/40 transition-colors"
-                  >
+                  <tr v-for="c in group.concepts" :key="c.id"
+                    class="divide-x-0 border-t border-default/50 hover:bg-elevated/40 transition-colors">
                     <td class="px-4 py-2.5 pl-8 font-mono text-xs text-highlighted">{{ c.specificationNumber }}</td>
                     <td class="min-w-[18rem] px-4 py-2.5 text-highlighted">{{ c.description }}</td>
                     <td class="px-4 py-2.5 text-muted">{{ c.unit }}</td>
                     <td class="px-4 py-2.5 text-right tabular-nums text-highlighted">{{ formatMoney(c.unitPrice) }}</td>
-                    <td class="px-4 py-2.5 text-right tabular-nums text-highlighted">{{ formatNumber(c.contractedQuantity) }}</td>
-                    <td class="px-4 py-2.5 text-right tabular-nums font-medium text-highlighted">{{ formatMoney(c.unitPrice * c.contractedQuantity) }}</td>
-                    <td class="px-4 py-2.5 text-right tabular-nums text-muted">{{ formatNumber(data.executedQty[c.id] ?? 0) }}</td>
-                    <td class="px-4 py-2.5 text-right tabular-nums text-muted">{{ formatMoney(data.executedAmount[c.id] ?? 0) }}</td>
-                    <td
-                      class="px-4 py-2.5 text-right tabular-nums"
-                      :class="(c.contractedQuantity - (data.executedQty[c.id] ?? 0)) < 0 ? 'text-error font-medium' : 'text-muted'"
-                    >
+                    <td class="px-4 py-2.5 text-right tabular-nums text-highlighted">{{
+                      formatNumber(c.contractedQuantity) }}</td>
+                    <td class="px-4 py-2.5 text-right tabular-nums font-medium text-highlighted">{{
+                      formatMoney(c.unitPrice * c.contractedQuantity) }}</td>
+                    <td class="px-4 py-2.5 text-right tabular-nums text-muted">{{ formatNumber(data.executedQty[c.id] ??
+                      0) }}</td>
+                    <td class="px-4 py-2.5 text-right tabular-nums text-muted">{{ formatMoney(data.executedAmount[c.id]
+                      ?? 0) }}</td>
+                    <td class="px-4 py-2.5 text-right tabular-nums"
+                      :class="(c.contractedQuantity - (data.executedQty[c.id] ?? 0)) < 0 ? 'text-error font-medium' : 'text-muted'">
                       {{ formatNumber(c.contractedQuantity - (data.executedQty[c.id] ?? 0)) }}
                     </td>
                   </tr>
@@ -201,13 +185,13 @@ const totalExecutedAmount = computed(() =>
                   <td colspan="3" class="px-4 py-2.5" />
                   <td class="px-4 py-2.5 text-right text-xs font-medium text-muted">{{ C.total }}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-semibold text-highlighted">
-                    {{ formatNumber(data.concepts.reduce((s, c) => s + c.contractedQuantity, 0)) }}
+                    {{formatNumber(data.concepts.reduce((s, c) => s + c.contractedQuantity, 0))}}
                   </td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-semibold text-highlighted">
                     {{ formatMoney(totalContracted) }}
                   </td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-medium text-muted">
-                    {{ formatNumber(Object.values(data.executedQty).reduce((s, v) => s + v, 0)) }}
+                    {{formatNumber(Object.values(data.executedQty).reduce((s, v) => s + v, 0))}}
                   </td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-medium text-muted">
                     {{ formatMoney(totalExecutedAmount) }}
@@ -218,7 +202,7 @@ const totalExecutedAmount = computed(() =>
             </table>
           </div>
         </UCard>
-      </template>
+      </div>
     </template>
   </UDashboardPanel>
 </template>

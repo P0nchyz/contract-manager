@@ -63,7 +63,7 @@ const { data, status, error, refresh } = await useAsyncData(
         <USkeleton v-for="i in 4" :key="i" class="h-14 w-full rounded-lg" />
       </div>
 
-      <template v-else-if="data">
+      <div v-else-if="data" class="space-y-6">
         <div
           v-if="!data.notes.length"
           class="rounded-lg border border-dashed border-default py-16 text-center"
@@ -124,7 +124,7 @@ const { data, status, error, refresh } = await useAsyncData(
             </tbody>
           </table>
         </UCard>
-      </template>
+      </div>
     </template>
   </UDashboardPanel>
 </template>

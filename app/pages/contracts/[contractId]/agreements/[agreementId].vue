@@ -118,53 +118,32 @@ const editLink = computed(() => ({
 <template>
   <UDashboardPanel id="agreement-detail">
     <template #header>
-      <UDashboardNavbar
-        :title="agreement ? `${AG.titlePrefix} No. ${agreement.number}` : AG.titlePrefix"
-      >
+      <UDashboardNavbar :title="agreement ? `${AG.titlePrefix} No. ${agreement.number}` : AG.titlePrefix">
         <template #leading>
-          <UButton
-            icon="i-lucide-arrow-left"
-            color="neutral"
-            variant="ghost"
-            :to="`/contracts/${contractId}/contract`"
-            :aria-label="S.common.back"
-          />
+          <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" :to="`/contracts/${contractId}/contract`"
+            :aria-label="S.common.back" />
         </template>
         <template #right>
-          <StatusBadge
-            v-if="agreement"
-            :display="agreementStatusDisplay[agreement.status]"
-            size="md"
-          />
+          <StatusBadge v-if="agreement" :display="agreementStatusDisplay[agreement.status]" size="md" />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <UAlert
-        v-if="error"
-        color="error"
-        variant="soft"
-        icon="i-lucide-alert-triangle"
-        :title="S.common.error"
-        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
-      />
+      <UAlert v-if="error" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="S.common.error"
+        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]" />
 
       <div v-else-if="status === 'pending'" class="space-y-4">
         <USkeleton class="h-28 w-full rounded-lg" />
         <USkeleton class="h-40 w-full rounded-lg" />
       </div>
 
-      <template v-else-if="agreement">
+      <div v-else-if="agreement" class="space-y-6">
         <!-- Banner for returned / rejected -->
-        <UAlert
-          v-if="latestNote"
-          :color="agreement.status === 'rejected' ? 'error' : 'warning'"
-          variant="soft"
+        <UAlert v-if="latestNote" :color="agreement.status === 'rejected' ? 'error' : 'warning'" variant="soft"
           icon="i-lucide-message-square-warning"
           :title="agreement.status === 'rejected' ? AG.banner.rejected : AG.banner.withNotes"
-          :description="latestNote.note"
-        />
+          :description="latestNote.note" />
 
         <!-- Detail card -->
         <UCard>
@@ -182,17 +161,21 @@ const editLink = computed(() => ({
             </div>
             <div>
               <dt class="text-xs text-muted">Tipo</dt>
-              <dd><UBadge :label="AG.kind[agreement.kind]" color="neutral" variant="soft" size="sm" /></dd>
+              <dd>
+                <UBadge :label="AG.kind[agreement.kind]" color="neutral" variant="soft" size="sm" />
+              </dd>
             </div>
             <div v-if="agreement.amountDelta != null">
               <dt class="text-xs text-muted">{{ AG.fields.amountDelta }}</dt>
-              <dd class="font-semibold tabular-nums" :class="agreement.amountDelta >= 0 ? 'text-success' : 'text-error'">
+              <dd class="font-semibold tabular-nums"
+                :class="agreement.amountDelta >= 0 ? 'text-success' : 'text-error'">
                 {{ agreement.amountDelta >= 0 ? '+' : '' }}{{ formatMoney(agreement.amountDelta) }}
               </dd>
             </div>
             <div v-if="agreement.timeDeltaDays != null">
               <dt class="text-xs text-muted">{{ AG.fields.timeDeltaDays }}</dt>
-              <dd class="font-semibold tabular-nums" :class="agreement.timeDeltaDays >= 0 ? 'text-success' : 'text-error'">
+              <dd class="font-semibold tabular-nums"
+                :class="agreement.timeDeltaDays >= 0 ? 'text-success' : 'text-error'">
                 {{ agreement.timeDeltaDays >= 0 ? '+' : '' }}{{ agreement.timeDeltaDays }} días
               </dd>
             </div>
@@ -208,30 +191,43 @@ const editLink = computed(() => ({
                     <th class="px-3 py-2 text-left font-medium">{{ AG.conceptChanges.columns.specification }}</th>
                     <th class="px-3 py-2 text-left font-medium">{{ AG.conceptChanges.columns.description }}</th>
                     <th class="px-3 py-2 text-right font-medium">{{ AG.conceptChanges.columns.currentQty }}</th>
-                    <th class="px-3 py-2 text-right font-medium text-success">{{ AG.conceptChanges.columns.newQty }}</th>
+                    <th class="px-3 py-2 text-right font-medium text-success">{{ AG.conceptChanges.columns.newQty }}
+                    </th>
                     <th class="px-3 py-2 text-right font-medium">{{ AG.conceptChanges.columns.currentPrice }}</th>
-                    <th class="px-3 py-2 text-right font-medium text-success">{{ AG.conceptChanges.columns.newPrice }}</th>
-                    <th class="px-3 py-2 text-center font-medium text-success">{{ AG.conceptChanges.columns.newStart }}</th>
-                    <th class="px-3 py-2 text-center font-medium text-success">{{ AG.conceptChanges.columns.newEnd }}</th>
+                    <th class="px-3 py-2 text-right font-medium text-success">{{ AG.conceptChanges.columns.newPrice }}
+                    </th>
+                    <th class="px-3 py-2 text-center font-medium text-success">{{ AG.conceptChanges.columns.newStart }}
+                    </th>
+                    <th class="px-3 py-2 text-center font-medium text-success">{{ AG.conceptChanges.columns.newEnd }}
+                    </th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-default">
                   <tr v-for="cc in (agreement.conceptChanges ?? [])" :key="cc.conceptId">
-                    <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ conceptOf(cc.conceptId)?.specificationNumber }}</td>
+                    <td class="px-3 py-2 font-mono text-xs text-highlighted">{{
+                      conceptOf(cc.conceptId)?.specificationNumber }}
+                    </td>
                     <td class="min-w-[10rem] px-3 py-2 text-highlighted">{{ conceptOf(cc.conceptId)?.description }}</td>
-                    <td class="px-3 py-2 text-right tabular-nums text-muted">{{ formatNumber(conceptOf(cc.conceptId)?.contractedQuantity ?? 0) }}</td>
-                    <td class="px-3 py-2 text-right tabular-nums" :class="cc.contractedQuantity != null ? 'font-medium text-success' : 'text-muted'">
+                    <td class="px-3 py-2 text-right tabular-nums text-muted">{{
+                      formatNumber(conceptOf(cc.conceptId)?.contractedQuantity ?? 0) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums"
+                      :class="cc.contractedQuantity != null ? 'font-medium text-success' : 'text-muted'">
                       {{ cc.contractedQuantity != null ? formatNumber(cc.contractedQuantity) : '—' }}
                     </td>
-                    <td class="px-3 py-2 text-right tabular-nums text-muted">{{ formatMoney(conceptOf(cc.conceptId)?.unitPrice ?? 0) }}</td>
-                    <td class="px-3 py-2 text-right tabular-nums" :class="cc.unitPrice != null ? 'font-medium text-success' : 'text-muted'">
+                    <td class="px-3 py-2 text-right tabular-nums text-muted">{{
+                      formatMoney(conceptOf(cc.conceptId)?.unitPrice ??
+                      0) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums"
+                      :class="cc.unitPrice != null ? 'font-medium text-success' : 'text-muted'">
                       {{ cc.unitPrice != null ? formatMoney(cc.unitPrice) : '—' }}
                     </td>
                     <td class="px-3 py-2 text-center" :class="cc.startDate ? 'text-success font-medium' : 'text-muted'">
-                      {{ cc.startDate ? formatDate(cc.startDate) : (scheduleOf(cc.conceptId)?.startDate ? formatDate(scheduleOf(cc.conceptId)!.startDate) : '—') }}
+                      {{ cc.startDate ? formatDate(cc.startDate) : (scheduleOf(cc.conceptId)?.startDate ?
+                        formatDate(scheduleOf(cc.conceptId)!.startDate) : '—') }}
                     </td>
                     <td class="px-3 py-2 text-center" :class="cc.endDate ? 'text-success font-medium' : 'text-muted'">
-                      {{ cc.endDate ? formatDate(cc.endDate) : (scheduleOf(cc.conceptId)?.endDate ? formatDate(scheduleOf(cc.conceptId)!.endDate) : '—') }}
+                      {{ cc.endDate ? formatDate(cc.endDate) : (scheduleOf(cc.conceptId)?.endDate ?
+                        formatDate(scheduleOf(cc.conceptId)!.endDate) : '—') }}
                     </td>
                   </tr>
                 </tbody>
@@ -260,13 +256,18 @@ const editLink = computed(() => ({
                     <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ nc.specificationNumber }}</td>
                     <td class="min-w-[10rem] px-3 py-2 text-highlighted">{{ nc.description }}</td>
                     <td class="px-3 py-2 text-muted">{{ nc.unit }}</td>
-                    <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatNumber(nc.contractedQuantity) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{
+                      formatNumber(nc.contractedQuantity) }}</td>
                     <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatMoney(nc.unitPrice) }}</td>
                     <td class="px-3 py-2 text-center text-muted">
-                      {{ (nc as typeof nc & { startDate?: Date }).startDate ? formatDate((nc as typeof nc & { startDate?: Date }).startDate!) : '—' }}
+                      {{ (nc as typeof nc & { startDate?: Date }).startDate ? formatDate((nc as typeof nc & {
+                        startDate?: Date
+                      }).startDate!) : '—' }}
                     </td>
                     <td class="px-3 py-2 text-center text-muted">
-                      {{ (nc as typeof nc & { endDate?: Date }).endDate ? formatDate((nc as typeof nc & { endDate?: Date }).endDate!) : '—' }}
+                      {{ (nc as typeof nc & { endDate?: Date }).endDate ? formatDate((nc as typeof nc & {
+                        endDate?: Date
+                      }).endDate!) : '—' }}
                     </td>
                   </tr>
                 </tbody>
@@ -314,14 +315,8 @@ const editLink = computed(() => ({
             </dl>
           </div>
 
-          <UAlert
-            v-if="agreement.status !== 'approved'"
-            class="mt-4"
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-info"
-            :title="AG.effectNotice"
-          />
+          <UAlert v-if="agreement.status !== 'approved'" class="mt-4" color="neutral" variant="soft"
+            icon="i-lucide-info" :title="AG.effectNotice" />
         </UCard>
 
         <!-- Inline review (supervisor returns / resident rejects) -->
@@ -333,32 +328,15 @@ const editLink = computed(() => ({
             </div>
           </template>
           <UFormField :label="AG.note.label" :error="reviewError || undefined">
-            <UTextarea
-              v-model="reviewNote"
-              :rows="3"
-              class="w-full"
-              :placeholder="AG.note.placeholder"
-            />
+            <UTextarea v-model="reviewNote" :rows="3" class="w-full" :placeholder="AG.note.placeholder" />
           </UFormField>
           <div class="mt-3 flex flex-wrap justify-end gap-3">
-            <UButton
-              v-if="canReject"
-              color="error"
-              variant="soft"
-              icon="i-lucide-x-circle"
-              :disabled="busy"
-              @click="reject"
-            >
+            <UButton v-if="canReject" color="error" variant="soft" icon="i-lucide-x-circle" :disabled="busy"
+              @click="reject">
               {{ AG.actions.reject }}
             </UButton>
-            <UButton
-              v-if="canReturn"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-corner-up-left"
-              :disabled="busy"
-              @click="returnWithNotes"
-            >
+            <UButton v-if="canReturn" color="warning" variant="soft" icon="i-lucide-corner-up-left" :disabled="busy"
+              @click="returnWithNotes">
               {{ AG.actions.returnWithNotes }}
             </UButton>
           </div>
@@ -374,17 +352,10 @@ const editLink = computed(() => ({
               </div>
             </template>
             <ul class="divide-y divide-default">
-              <li
-                v-for="s in agreement.signatures"
-                :key="s.id"
-                class="flex items-center justify-between py-2.5"
-              >
+              <li v-for="s in agreement.signatures" :key="s.id" class="flex items-center justify-between py-2.5">
                 <div class="flex items-center gap-3">
-                  <UIcon
-                    :name="s.status === 'signed' ? 'i-lucide-badge-check' : 'i-lucide-circle-dashed'"
-                    class="size-4"
-                    :class="s.status === 'signed' ? 'text-success' : 'text-muted'"
-                  />
+                  <UIcon :name="s.status === 'signed' ? 'i-lucide-badge-check' : 'i-lucide-circle-dashed'"
+                    class="size-4" :class="s.status === 'signed' ? 'text-success' : 'text-muted'" />
                   <div>
                     <div class="text-sm font-medium text-highlighted">{{ S.roles[s.role] }}</div>
                     <div class="text-xs text-muted">
@@ -396,14 +367,10 @@ const editLink = computed(() => ({
                     </div>
                   </div>
                 </div>
-                <UBadge
-                  :label="s.status === 'signed'
-                    ? S.estimateDetail.signatures.signed
-                    : S.estimateDetail.signatures.pending"
-                  :color="s.status === 'signed' ? 'success' : 'neutral'"
-                  :variant="s.status === 'signed' ? 'soft' : 'outline'"
-                  size="sm"
-                />
+                <UBadge :label="s.status === 'signed'
+                  ? S.estimateDetail.signatures.signed
+                  : S.estimateDetail.signatures.pending" :color="s.status === 'signed' ? 'success' : 'neutral'"
+                  :variant="s.status === 'signed' ? 'soft' : 'outline'" size="sm" />
               </li>
             </ul>
           </UCard>
@@ -417,19 +384,14 @@ const editLink = computed(() => ({
             </template>
             <ol class="relative space-y-4 border-s border-default ps-5">
               <li v-for="ev in [...agreement.history].reverse()" :key="ev.id" class="relative">
-                <span
-                  class="absolute -start-[1.4rem] top-1 size-2.5 rounded-full bg-muted ring-4 ring-default"
-                />
+                <span class="absolute -start-[1.4rem] top-1 size-2.5 rounded-full bg-muted ring-4 ring-default" />
                 <div class="text-sm font-medium text-highlighted">
                   {{ S.workflow[ev.action] }}
                 </div>
                 <div class="text-xs text-muted">
                   {{ userName(ev.byUserId) }} · {{ formatDate(ev.at) }}
                 </div>
-                <p
-                  v-if="ev.note"
-                  class="mt-1 rounded-md bg-elevated/60 px-2 py-1 text-xs text-default"
-                >
+                <p v-if="ev.note" class="mt-1 rounded-md bg-elevated/60 px-2 py-1 text-xs text-default">
                   {{ ev.note }}
                 </p>
               </li>
@@ -437,26 +399,12 @@ const editLink = computed(() => ({
           </UCard>
         </div>
 
-        <UAlert
-          v-if="actionError"
-          :title="actionError"
-          color="error"
-          variant="soft"
-          icon="i-lucide-alert-triangle"
-        />
+        <UAlert v-if="actionError" :title="actionError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
 
         <!-- Sticky action bar -->
-        <div
-          v-if="hasBarAction"
-          class="sticky bottom-0 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
-        >
-          <UButton
-            v-if="canEdit"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-pencil"
-            :to="editLink"
-          >
+        <div v-if="hasBarAction"
+          class="sticky bottom-0 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+          <UButton v-if="canEdit" color="neutral" variant="outline" icon="i-lucide-pencil" :to="editLink">
             {{ AG.actions.edit }}
           </UButton>
           <div v-else />
@@ -465,18 +413,12 @@ const editLink = computed(() => ({
             <UButton v-if="canSubmit" icon="i-lucide-send" :loading="busy" @click="submit">
               {{ AG.actions.submit }}
             </UButton>
-            <UButton
-              v-if="canSign"
-              color="success"
-              icon="i-lucide-pen-line"
-              :loading="busy"
-              @click="sign"
-            >
+            <UButton v-if="canSign" color="success" icon="i-lucide-pen-line" :loading="busy" @click="sign">
               {{ AG.actions.sign }}
             </UButton>
           </div>
         </div>
-      </template>
+      </div>
     </template>
   </UDashboardPanel>
 </template>

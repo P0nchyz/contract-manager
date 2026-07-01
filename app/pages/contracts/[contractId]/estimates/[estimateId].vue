@@ -191,7 +191,10 @@ const editLink = computed(() => ({
             <div>
               <div class="text-xs text-muted">{{ D.period }}</div>
               <div class="font-medium text-highlighted">
-                {{ formatDate(estimate.periodStart) }} – {{ formatDate(estimate.periodEnd) }}
+                Período {{ estimate.periodIndex }}
+                <span class="ml-1 text-xs text-muted">
+                  ({{ formatDate(estimate.periodStart) }} – {{ formatDate(estimate.periodEnd) }})
+                </span>
               </div>
             </div>
             <div>

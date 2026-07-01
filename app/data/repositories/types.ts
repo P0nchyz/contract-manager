@@ -35,8 +35,7 @@ import type {
   User,
   UserId,
   WorkSchedule,
-  ScheduleItem,
-  ScheduleItemId,
+  ConceptScheduleEntry,
   ConceptSection,
   ConceptSectionId,
 } from '../models'
@@ -66,12 +65,12 @@ export interface AuthRepository {
 }
 
 // --- Contracts -------------------------------------------------------------
-export interface InitialScheduleItem {
-  // Ties directly to an index in the initialConcepts array (0-based) so
-  // the mock can assign the generated ConceptId after creating each concept.
+export interface InitialScheduleEntry {
+  /** 0-based index into initialConcepts. */
   conceptIndex: number
-  startDate: Date
-  endDate: Date
+  /** 0-based period index. */
+  periodIndex: number
+  plannedQuantity: number
 }
 
 export interface CreateContractInput {
@@ -90,7 +89,7 @@ export interface CreateContractInput {
   contractorCorporationId: CorporationId | null
   initialSections: CreateConceptSectionInput[]
   initialConcepts: CreateConceptInput[]
-  scheduleItems: InitialScheduleItem[]
+  scheduleEntries: InitialScheduleEntry[]
 }
 export interface ContractRepository {
   /** Contracts visible to the current user (assignment/creation rules applied). */
@@ -133,11 +132,11 @@ export interface EstimateLineInput {
 }
 export interface CreateEstimateInput {
   contractId: ContractId
-  periodStart: Date
-  periodEnd: Date
+  /** 1-based period number. */
+  periodIndex: number
   lineItems: EstimateLineInput[]
-  evidenceFileIds?: FileId[] // linked at creation/edit
-  linkedLogNoteIds?: LogNoteId[] // linked at creation/edit
+  evidenceFileIds?: FileId[]
+  linkedLogNoteIds?: LogNoteId[]
 }
 export interface EstimateRepository {
   listByContract(contractId: ContractId, params?: ListParams): Promise<Estimate[]>
@@ -210,10 +209,8 @@ export type FiniquitoRepository = CloseFlowRepository<FiniquitoStatement, Finiqu
 
 // --- Schedule --------------------------------------------------------------
 export interface ScheduleRepository {
-  getByContract(contractId: ContractId): Promise<WorkSchedule> // S-curve derived in utils
-  updateItem(itemId: ScheduleItemId, patch: Partial<Pick<ScheduleItem, 'startDate' | 'endDate' | 'programmedAmount'>>): Promise<ScheduleItem>
-  // Internal — called by contracts.create; not called directly from UI.
-  create(contractId: ContractId, items: Omit<ScheduleItem, 'id' | 'contractId'>[]): Promise<WorkSchedule>
+  getByContract(contractId: ContractId): Promise<WorkSchedule>
+  upsertEntry(contractId: ContractId, conceptId: ConceptId, periodIndex: number, plannedQuantity: number): Promise<void>
 }
 
 // --- Files & evidence ------------------------------------------------------

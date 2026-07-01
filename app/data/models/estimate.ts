@@ -24,6 +24,7 @@ export interface EstimateCover {
   contractorName: string
   contractorCorporationId: CorporationId | null
   estimateNumber: number
+  periodIndex: number
   periodStart: Date
   periodEnd: Date
 }
@@ -100,9 +101,11 @@ export interface Estimate {
   id: EstimateId
   contractId: ContractId
   number: number
+  /** 1-based period number matching the period index+1 in the work schedule. */
+  periodIndex: number
   status: EstimateStatus
-  periodStart: Date
-  periodEnd: Date
+  periodStart: Date  // derived from periodIndex for display
+  periodEnd: Date    // derived from periodIndex for display
 
   cover: EstimateCover
   lineItems: EstimateLineItem[]

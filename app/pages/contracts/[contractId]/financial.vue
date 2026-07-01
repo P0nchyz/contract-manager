@@ -92,7 +92,7 @@ const { data, status, error, refresh } = await useAsyncData(
 // ─── Derived values ───────────────────────────────────────────────────────────
 const fin = computed(() => data.value?.financials)
 
-const anticipoGranted   = computed(() => fin.value?.anticipoAmount ?? 0)
+const anticipoGranted = computed(() => fin.value?.anticipoAmount ?? 0)
 const anticipoRemaining = computed(() => Math.max(0, anticipoGranted.value - (data.value?.amortized ?? 0)))
 const anticipoAmortizedPct = computed(() =>
   anticipoGranted.value > 0
@@ -105,12 +105,12 @@ const balanceToPay = computed(() =>
 )
 
 // ─── Mark paid modal ─────────────────────────────────────────────────────────
-const payModalOpen   = ref(false)
+const payModalOpen = ref(false)
 const payingEstimate = ref<{ id: string; number: number } | null>(null)
 
 function openPayModal(est: { id: string; number: number }) {
   payingEstimate.value = est
-  payModalOpen.value   = true
+  payModalOpen.value = true
 }
 
 async function onPaid() {
@@ -124,26 +124,15 @@ async function onPaid() {
     <template #header>
       <UDashboardNavbar :title="FIN.title">
         <template #leading>
-          <UButton
-            icon="i-lucide-arrow-left"
-            color="neutral"
-            variant="ghost"
-            :to="`/contracts/${contractId}`"
-            :aria-label="S.common.back"
-          />
+          <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" :to="`/contracts/${contractId}`"
+            :aria-label="S.common.back" />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <UAlert
-        v-if="error"
-        color="error"
-        variant="soft"
-        icon="i-lucide-alert-triangle"
-        :title="S.common.error"
-        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
-      />
+      <UAlert v-if="error" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="S.common.error"
+        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]" />
 
       <div v-else-if="status === 'pending'" class="space-y-4">
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -153,7 +142,7 @@ async function onPaid() {
         <USkeleton class="h-64 w-full rounded-lg" />
       </div>
 
-      <div v-else-if="data" class="flex flex-col gap-6">
+      <div v-else-if="data" class="space-y-6">
 
         <!-- ① Monto contratado vs ejecutado vs pagado -->
         <UCard>
@@ -184,10 +173,8 @@ async function onPaid() {
                 {{ formatMoney(fin?.executedAmount ?? 0) }}
               </div>
               <div class="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-elevated">
-                <div
-                  class="h-full rounded-full bg-primary transition-all"
-                  :style="`width:${fin?.balancePercentage ?? 0}%`"
-                />
+                <div class="h-full rounded-full bg-primary transition-all"
+                  :style="`width:${fin?.balancePercentage ?? 0}%`" />
               </div>
               <div class="mt-1 text-xs text-muted">{{ formatPercent(fin?.balancePercentage ?? 0) }}</div>
             </div>
@@ -199,20 +186,16 @@ async function onPaid() {
                 {{ formatMoney(fin?.paidAmount ?? 0) }}
               </div>
               <div class="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-elevated">
-                <div
-                  class="h-full rounded-full bg-success transition-all"
-                  :style="`width:${fin?.financialProgress ?? 0}%`"
-                />
+                <div class="h-full rounded-full bg-success transition-all"
+                  :style="`width:${fin?.financialProgress ?? 0}%`" />
               </div>
               <div class="mt-1 text-xs text-muted">{{ formatPercent(fin?.financialProgress ?? 0) }}</div>
             </div>
           </div>
 
           <!-- Balance to pay callout -->
-          <div
-            v-if="balanceToPay > 0"
-            class="mt-5 flex items-center justify-between rounded-lg border border-warning/40 bg-warning/5 px-4 py-3"
-          >
+          <div v-if="balanceToPay > 0"
+            class="mt-5 flex items-center justify-between rounded-lg border border-warning/40 bg-warning/5 px-4 py-3">
             <div class="flex items-center gap-2 text-sm text-warning">
               <UIcon name="i-lucide-clock" class="size-4" />
               {{ FIN.amounts.balance }}
@@ -248,29 +231,18 @@ async function onPaid() {
                 {{ formatMoney(data.amortized) }}
               </div>
               <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-elevated">
-                <div
-                  class="h-full rounded-full bg-primary transition-all"
-                  :style="`width:${anticipoAmortizedPct}%`"
-                />
+                <div class="h-full rounded-full bg-primary transition-all" :style="`width:${anticipoAmortizedPct}%`" />
               </div>
               <div class="mt-0.5 text-xs text-muted">{{ formatPercent(anticipoAmortizedPct) }}</div>
             </div>
             <div>
               <div class="text-xs text-muted">{{ FIN.anticipo.remaining }}</div>
-              <div
-                class="mt-0.5 text-lg font-semibold tabular-nums"
-                :class="anticipoRemaining > 0 ? 'text-warning' : 'text-success'"
-              >
+              <div class="mt-0.5 text-lg font-semibold tabular-nums"
+                :class="anticipoRemaining > 0 ? 'text-warning' : 'text-success'">
                 {{ formatMoney(anticipoRemaining) }}
               </div>
-              <UBadge
-                v-if="anticipoRemaining === 0"
-                label="Amortizado completamente"
-                color="success"
-                variant="soft"
-                size="sm"
-                class="mt-1"
-              />
+              <UBadge v-if="anticipoRemaining === 0" label="Amortizado completamente" color="success" variant="soft"
+                size="sm" class="mt-1" />
             </div>
           </div>
         </UCard>
@@ -281,13 +253,8 @@ async function onPaid() {
             <div class="flex items-center gap-2 font-medium">
               <UIcon name="i-lucide-receipt" class="size-4 text-muted" />
               {{ FIN.sections.unpaid }}
-              <UBadge
-                v-if="data.unpaidEstimates.length"
-                :label="String(data.unpaidEstimates.length)"
-                color="warning"
-                variant="soft"
-                size="sm"
-              />
+              <UBadge v-if="data.unpaidEstimates.length" :label="String(data.unpaidEstimates.length)" color="warning"
+                variant="soft" size="sm" />
             </div>
           </template>
 
@@ -305,21 +272,12 @@ async function onPaid() {
                 </tr>
               </thead>
               <tbody class="divide-y divide-default">
-                <tr
-                  v-for="est in data.unpaidEstimates"
-                  :key="est.id"
-                  class="hover:bg-elevated/40 transition-colors"
-                >
+                <tr v-for="est in data.unpaidEstimates" :key="est.id" class="hover:bg-elevated/40 transition-colors">
                   <td class="px-4 py-3">
                     <div class="flex items-center gap-2">
                       <span class="font-medium text-highlighted">{{ est.number }}</span>
-                      <UButton
-                        icon="i-lucide-arrow-up-right"
-                        size="xs"
-                        color="neutral"
-                        variant="ghost"
-                        :to="`/contracts/${contractId}/estimates/${est.id}`"
-                      />
+                      <UButton icon="i-lucide-arrow-up-right" size="xs" color="neutral" variant="ghost"
+                        :to="`/contracts/${contractId}/estimates/${est.id}`" />
                     </div>
                   </td>
                   <td class="px-4 py-3 text-muted">
@@ -329,13 +287,8 @@ async function onPaid() {
                     {{ formatMoney(est.summary?.calculations?.total ?? 0) }}
                   </td>
                   <td v-if="canPay" class="px-4 py-3 text-right">
-                    <UButton
-                      icon="i-lucide-banknote"
-                      size="xs"
-                      color="success"
-                      variant="soft"
-                      @click="openPayModal({ id: est.id, number: est.number })"
-                    >
+                    <UButton icon="i-lucide-banknote" size="xs" color="success" variant="soft"
+                      @click="openPayModal({ id: est.id, number: est.number })">
                       {{ FIN.unpaid.markPaid }}
                     </UButton>
                   </td>
@@ -347,7 +300,8 @@ async function onPaid() {
                     Total
                   </td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-bold text-highlighted">
-                    {{ formatMoney(data.unpaidEstimates.reduce((s, e) => s + (e.summary?.calculations?.total ?? 0), 0)) }}
+                    {{formatMoney(data.unpaidEstimates.reduce((s, e) => s + (e.summary?.calculations?.total ?? 0), 0))
+                    }}
                   </td>
                   <td v-if="canPay" />
                 </tr>
@@ -417,16 +371,10 @@ async function onPaid() {
           </div>
         </UCard>
 
+        <!-- Pay modal -->
+        <MarkPaidModal v-if="payingEstimate" v-model:open="payModalOpen" :estimate-id="payingEstimate.id"
+          :contract-id="contractId" :estimate-number="payingEstimate.number" @paid="onPaid" />
       </div>
-    <!-- Pay modal -->
-    <MarkPaidModal
-      v-if="payingEstimate"
-      v-model:open="payModalOpen"
-      :estimate-id="payingEstimate.id"
-      :contract-id="contractId"
-      :estimate-number="payingEstimate.number"
-      @paid="onPaid"
-    />
     </template>
   </UDashboardPanel>
 </template>

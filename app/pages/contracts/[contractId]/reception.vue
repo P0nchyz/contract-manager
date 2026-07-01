@@ -188,7 +188,7 @@ const reject = () => withNote(repos.reception.reject)
       </div>
 
       <!-- Step 1: Log note (before reception exists, resident only) -->
-      <template v-else-if="step === 'logNote'">
+      <div v-else-if="step === 'logNote'" class="space-y-6">
         <UAlert
           color="neutral"
           variant="soft"
@@ -256,10 +256,10 @@ const reject = () => withNote(repos.reception.reject)
             {{ R.logNoteStep.create }}
           </UButton>
         </div>
-      </template>
+      </div>
 
       <!-- Step 2 / view: reception workflow -->
-      <template v-else-if="step === 'flow' && reception">
+      <div v-else-if="step === 'flow' && reception" class="space-y-6">
         <!-- Banner -->
         <UAlert
           v-if="latestNote"
@@ -408,16 +408,16 @@ const reject = () => withNote(repos.reception.reject)
             {{ R.actions.sign }}
           </UButton>
         </div>
-      </template>
+      </div>
 
       <!-- Non-initiating roles when no reception yet -->
-      <template v-else-if="!reception">
+      <div v-else-if="!reception" class="space-y-6">
         <div
           class="rounded-lg border border-dashed border-default py-16 text-center text-sm text-muted"
         >
           {{ S.contractInfo.closing.notStarted }}
         </div>
-      </template>
+      </div>
     </template>
   </UDashboardPanel>
 </template>

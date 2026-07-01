@@ -106,7 +106,7 @@ function fileIcon(mime: string): string {
         <USkeleton class="h-24 w-full rounded-lg" />
       </div>
 
-      <template v-else-if="data">
+      <div v-else-if="data" class="space-y-6">
         <!-- Content -->
         <UCard>
           <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-3">
@@ -186,7 +186,7 @@ function fileIcon(mime: string): string {
             class="mt-3"
           />
         </UCard>
-      </template>
+      </div>
     </template>
   </UDashboardPanel>
 </template>

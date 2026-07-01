@@ -24,6 +24,7 @@ import type {
   ReceptionStatement,
   User,
   WorkSchedule,
+  ConceptScheduleEntry,
 } from '../models'
 
 const d = (iso: string) => new Date(iso)
@@ -110,6 +111,7 @@ export const estimates: Estimate[] = [
       contractorName: 'Constructora del Valle, S.A. de C.V.',
       contractorCorporationId: 'CORP-001',
       estimateNumber: 1,
+      periodIndex: 1,
       periodStart: d('2024-02-01'),
       periodEnd: d('2024-02-28'),
     },
@@ -163,6 +165,7 @@ export const estimates: Estimate[] = [
     id: 'ES-002',
     contractId: 'CT-001',
     number: 2,
+    periodIndex: 2,
     status: 'with_notes', // returned by supervisor; loops back to draft on edit
     periodStart: d('2024-03-01'),
     periodEnd: d('2024-03-31'),
@@ -172,6 +175,7 @@ export const estimates: Estimate[] = [
       contractorName: 'Constructora del Valle, S.A. de C.V.',
       contractorCorporationId: 'CORP-001',
       estimateNumber: 2,
+      periodIndex: 2,
       periodStart: d('2024-03-01'),
       periodEnd: d('2024-03-31'),
     },
@@ -260,12 +264,27 @@ export const schedules: WorkSchedule[] = [
   {
     id: 'SCH-001',
     contractId: 'CT-001',
-    items: [
-      { id: 'SI-01', contractId: 'CT-001', label: 'Levantamiento topográfico', conceptId: 'CN-01', startDate: d('2024-01-15'), endDate: d('2024-02-15'), programmedPercentage: 100, actualPercentage: 100, programmedAmount: 74_000_000, actualAmount: 74_000_000 },
-      { id: 'SI-02', contractId: 'CT-001', label: 'Modelado estructura', conceptId: 'CN-02', startDate: d('2024-02-01'), endDate: d('2024-06-30'), programmedPercentage: 45, actualPercentage: 42, programmedAmount: 1_140_000_000, actualAmount: 475_000_000 },
-      { id: 'SI-03', contractId: 'CT-001', label: 'Modelado MEP', conceptId: 'CN-03', startDate: d('2024-04-01'), endDate: d('2024-09-30'), programmedPercentage: 10, actualPercentage: 0, programmedAmount: 1_440_000_000, actualAmount: 0 },
-      { id: 'SI-04', contractId: 'CT-001', label: 'Clash detection', conceptId: 'CN-04', startDate: d('2024-09-01'), endDate: d('2024-10-31'), programmedPercentage: 0, actualPercentage: null, programmedAmount: 48_000_000, actualAmount: null },
-      { id: 'SI-05', contractId: 'CT-001', label: 'Capacitación', conceptId: 'CN-05', startDate: d('2024-03-01'), endDate: d('2024-12-15'), programmedPercentage: 35, actualPercentage: 33, programmedAmount: 57_000_000, actualAmount: 19_000_000 },
+    entries: [
+  { id: 'SE-101' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-01' as ConceptScheduleEntry['conceptId'], periodIndex: 0, plannedQuantity: 20 },
+  { id: 'SE-102' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-01' as ConceptScheduleEntry['conceptId'], periodIndex: 1, plannedQuantity: 20 },
+  { id: 'SE-103' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-02' as ConceptScheduleEntry['conceptId'], periodIndex: 1, plannedQuantity: 2400 },
+  { id: 'SE-104' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-02' as ConceptScheduleEntry['conceptId'], periodIndex: 2, plannedQuantity: 2400 },
+  { id: 'SE-105' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-02' as ConceptScheduleEntry['conceptId'], periodIndex: 3, plannedQuantity: 2400 },
+  { id: 'SE-106' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-02' as ConceptScheduleEntry['conceptId'], periodIndex: 4, plannedQuantity: 2400 },
+  { id: 'SE-107' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-02' as ConceptScheduleEntry['conceptId'], periodIndex: 5, plannedQuantity: 2400 },
+  { id: 'SE-108' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-03' as ConceptScheduleEntry['conceptId'], periodIndex: 3, plannedQuantity: 2000 },
+  { id: 'SE-109' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-03' as ConceptScheduleEntry['conceptId'], periodIndex: 4, plannedQuantity: 2000 },
+  { id: 'SE-110' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-03' as ConceptScheduleEntry['conceptId'], periodIndex: 5, plannedQuantity: 2000 },
+  { id: 'SE-111' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-03' as ConceptScheduleEntry['conceptId'], periodIndex: 6, plannedQuantity: 2000 },
+  { id: 'SE-112' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-03' as ConceptScheduleEntry['conceptId'], periodIndex: 7, plannedQuantity: 2000 },
+  { id: 'SE-113' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-03' as ConceptScheduleEntry['conceptId'], periodIndex: 8, plannedQuantity: 2000 },
+  { id: 'SE-114' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-04' as ConceptScheduleEntry['conceptId'], periodIndex: 8, plannedQuantity: 1 },
+  { id: 'SE-115' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-05' as ConceptScheduleEntry['conceptId'], periodIndex: 2, plannedQuantity: 1 },
+  { id: 'SE-116' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-05' as ConceptScheduleEntry['conceptId'], periodIndex: 3, plannedQuantity: 1 },
+  { id: 'SE-117' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-05' as ConceptScheduleEntry['conceptId'], periodIndex: 4, plannedQuantity: 1 },
+  { id: 'SE-118' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-05' as ConceptScheduleEntry['conceptId'], periodIndex: 5, plannedQuantity: 1 },
+  { id: 'SE-119' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-05' as ConceptScheduleEntry['conceptId'], periodIndex: 6, plannedQuantity: 1 },
+  { id: 'SE-120' as ConceptScheduleEntry['id'], contractId: 'CT-001', conceptId: 'CN-05' as ConceptScheduleEntry['conceptId'], periodIndex: 7, plannedQuantity: 1 },
     ],
   },
 ]

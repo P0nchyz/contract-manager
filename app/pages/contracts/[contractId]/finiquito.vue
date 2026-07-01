@@ -149,7 +149,7 @@ const reject = () => withNote(repos.finiquito.reject)
       />
 
       <!-- Initiate: reception approved, no finiquito yet -->
-      <template v-else-if="canInitiate">
+      <div v-else-if="canInitiate" class="space-y-6">
         <div
           class="rounded-lg border border-dashed border-default py-16 text-center"
         >
@@ -167,10 +167,10 @@ const reject = () => withNote(repos.finiquito.reject)
           icon="i-lucide-alert-triangle"
           class="mt-4"
         />
-      </template>
+      </div>
 
       <!-- Flow view -->
-      <template v-else-if="finiquito">
+      <div v-else-if="finiquito" class="space-y-6">
         <!-- Banner -->
         <UAlert
           v-if="latestNote"
@@ -319,7 +319,7 @@ const reject = () => withNote(repos.finiquito.reject)
             {{ F.actions.sign }}
           </UButton>
         </div>
-      </template>
+      </div>
 
       <!-- Non-initiating roles, nothing started -->
       <template v-else>

@@ -1,6 +1,6 @@
 <!-- app/pages/contracts/[contractId]/index.vue -->
 <script setup lang="ts">
-import { buildScheduleCurve, type ConceptProgress } from '~/data/calc/schedule'
+import { buildScheduleCurve, buildPeriods, currentPeriodIndex as getCurrentPeriodIdx, type ConceptMeta, type PeriodProgress } from '~/data/calc/schedule'
 import { S } from '~/constants/strings'
 import type { Permission } from '~/lib/permissions'
 
@@ -22,30 +22,32 @@ const { data, status, error, refresh } = await useAsyncData(
     ])
 
     // Roll up physical (approved+paid) and financial (paid) progress per concept.
-    const physQty: Record<string, number> = {}
-    const finQty:  Record<string, number> = {}
+    const periodicity = contract.estimatePeriodicity ?? 'monthly'
+    const periods = schedule
+      ? buildPeriods(new Date(contract.startDate), new Date(contract.endDate), periodicity)
+      : []
+    const curIdx = getCurrentPeriodIdx(periods)
+
+    const progress: PeriodProgress[] = []
     for (const est of estimates) {
       const isPhysical  = est.status === 'approved' || est.status === 'paid'
-      const isPaid      = est.status === 'paid'
+      const isFinancial = est.status === 'paid'
+      if (!isPhysical) continue
       for (const li of est.lineItems) {
-        if (isPhysical) physQty[li.conceptId] = (physQty[li.conceptId] ?? 0) + li.inThisEstimate
-        if (isPaid)     finQty[li.conceptId]  = (finQty[li.conceptId]  ?? 0) + li.inThisEstimate
+        progress.push({
+          conceptId:    String(li.conceptId),
+          periodIndex:  est.periodIndex - 1,
+          physicalQty:  li.inThisEstimate,
+          financialQty: isFinancial ? li.inThisEstimate : 0,
+        })
       }
     }
-    const contractedQty: Record<string, number> = {}
-    for (const c of concepts) contractedQty[c.id] = c.contractedQuantity
 
-    const conceptProgress: ConceptProgress[] = (schedule?.items ?? [])
-      .filter((i) => i.conceptId)
-      .map((i) => {
-        const cid = i.conceptId!
-        const contracted = contractedQty[cid] ?? 0
-        return {
-          conceptId:         cid,
-          physicalProgress:  contracted > 0 ? Math.min((physQty[cid] ?? 0) / contracted * 100, 100) : 0,
-          financialProgress: contracted > 0 ? Math.min((finQty[cid]  ?? 0) / contracted * 100, 100) : 0,
-        }
-      })
+    const conceptMetas: ConceptMeta[] = concepts.map((c) => ({
+      conceptId:          String(c.id),
+      contractedQuantity: c.contractedQuantity,
+      unitPrice:          c.unitPrice,
+    }))
 
     return {
       contract,
@@ -53,7 +55,7 @@ const { data, status, error, refresh } = await useAsyncData(
       recentLogNotes: [...logNotes].sort((a, b) => b.folio - a.folio).slice(0, 5),
       recentEstimates: [...estimates].sort((a, b) => b.number - a.number).slice(0, 5),
       curve: schedule
-        ? buildScheduleCurve(schedule.items, contract.estimatePeriodicity ?? 'monthly', conceptProgress)
+        ? buildScheduleCurve(periods, schedule.entries, conceptMetas, progress, curIdx)
         : [],
     }
   },
@@ -113,7 +115,7 @@ const quickActions = computed<QuickAction[]>(() => {
         <USkeleton class="h-64 lg:col-span-5 rounded-lg" />
       </div>
 
-      <template v-else-if="data">
+      <div v-else-if="data" class="space-y-6">
         <div>
           <h2 class="text-base font-medium leading-snug">{{ data.contract.title }}</h2>
         </div>
@@ -141,7 +143,7 @@ const quickActions = computed<QuickAction[]>(() => {
             :contract-id="contractId"
           />
         </div>
-      </template>
+      </div>
     </template>
   </UDashboardPanel>
 </template>

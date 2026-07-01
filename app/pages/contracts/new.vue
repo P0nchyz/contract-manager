@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
-import type { CreateConceptInput } from '~/data/repositories/types'
+import type { CreateConceptInput, CreateConceptSectionInput } from '~/data/repositories/types'
 
 definePageMeta({ requiredPermission: 'contract:create' })
 
@@ -18,8 +18,8 @@ const { data: refs, status: refsStatus } = await useAsyncData('contract-new-refs
   ])
   return {
     superintendents: users.filter((u) => u.role === 'superintendent' && u.active),
-    supervisors:     users.filter((u) => u.role === 'supervisor'     && u.active),
-    financials:      users.filter((u) => u.role === 'financial'      && u.active),
+    supervisors: users.filter((u) => u.role === 'supervisor' && u.active),
+    financials: users.filter((u) => u.role === 'financial' && u.active),
     corporations,
   }
 })
@@ -30,29 +30,29 @@ const { data: refs, status: refsStatus } = await useAsyncData('contract-new-refs
 type Phase = 'form' | 'upload'
 const phase = ref<Phase>('form')
 const createdContractId = ref<string | null>(null)
-const contractFolderId  = ref<string | null>(null) // predefined 'contract' folder
+const contractFolderId = ref<string | null>(null) // predefined 'contract' folder
 
 // ─── Form: section 1 — general ───────────────────────────────────────────────
-const code      = ref('')
-const title     = ref('')
+const code = ref('')
+const title = ref('')
 const startDate = ref('')
-const endDate   = ref('')
+const endDate = ref('')
 
 // ─── Form: section 2 — rates + periodicity ───────────────────────────────────
-const anticipoPct  = ref<number | ''>(20)
-const ivaRate      = ref<number | ''>(16)
+const anticipoPct = ref<number | ''>(20)
+const ivaRate = ref<number | ''>(16)
 const retentionPct = ref<number | ''>(5)
-const periodicity  = ref<'monthly' | 'biweekly'>('monthly')
+const periodicity = ref<'monthly' | 'biweekly'>('monthly')
 
 const periodicityOptions = [
-  { label: F.fields.periodicityMonthly,   value: 'monthly'   as const },
-  { label: F.fields.periodicityBiweekly,  value: 'biweekly'  as const },
+  { label: F.fields.periodicityMonthly, value: 'monthly' as const },
+  { label: F.fields.periodicityBiweekly, value: 'biweekly' as const },
 ]
 
 // ─── Form: section 3 — parties ───────────────────────────────────────────────
 const superintendentId = ref<string | null>(null)
-const supervisorId     = ref<string | null>(null)
-const financialId      = ref<string | null>(null)
+const supervisorId = ref<string | null>(null)
+const financialId = ref<string | null>(null)
 
 const selectedSup = computed(() =>
   refs.value?.superintendents.find((u) => u.id === superintendentId.value) ?? null,
@@ -65,57 +65,37 @@ const corpName = computed(() =>
 const contractorCorporationId = computed(() => selectedSup.value?.corporationId ?? null)
 
 // ─── Form: section 3.5 — catalog sections ────────────────────────────────────
-import type { CreateConceptSectionInput } from '~/data/repositories/types'
 
-type SectionDraft = CreateConceptSectionInput & { _startRaw: string; _endRaw: string }
+type SectionDraft = { specificationNumber: string; description: string }
 const catalogSections = ref<SectionDraft[]>([])
 
 function addSection() {
-  catalogSections.value.push({
-    specificationNumber: '',
-    description: '',
-    startDate: new Date(),
-    endDate: new Date(),
-    order: catalogSections.value.length,
-    _startRaw: '',
-    _endRaw: '',
-  })
+  catalogSections.value.push({ specificationNumber: '', description: '' })
 }
 function removeSection(idx: number) {
-  const removed = catalogSections.value[idx]
   catalogSections.value.splice(idx, 1)
-  // Re-order
-  catalogSections.value.forEach((s, i) => { s.order = i })
-  // Unassign concepts that were in this section
-  concepts.value.forEach((c) => { if ((c as any)._sectionIdx === idx) (c as any)._sectionIdx = null })
+  // Unassign and re-index concepts
+  concepts.value.forEach((c) => {
+    if (c._sectionIdx === idx) c._sectionIdx = null
+    else if (c._sectionIdx != null && c._sectionIdx > idx) c._sectionIdx--
+  })
 }
 
 const resolvedSections = computed<CreateConceptSectionInput[]>(() =>
   catalogSections.value.map((s, i) => ({
     specificationNumber: s.specificationNumber.trim(),
     description: s.description.trim(),
-    startDate: s._startRaw ? new Date(`${s._startRaw}T12:00:00`) : new Date(),
-    endDate:   s._endRaw   ? new Date(`${s._endRaw}T12:00:00`)   : new Date(),
+    startDate: new Date(),  // not used at creation
+    endDate: new Date(),
     order: i,
   })),
 )
 
 const sectionErrors = computed(() =>
-  catalogSections.value.map((s) => {
-    const spec  = s.specificationNumber.trim() ? '' : S.conceptSections.validation.specRequired
-    const desc  = s.description.trim()         ? '' : S.conceptSections.validation.descRequired
-    let dates = ''
-    if (!s._startRaw || !s._endRaw) {
-      dates = S.conceptSections.validation.datesRequired
-    } else if (s._startRaw >= s._endRaw) {
-      dates = S.conceptSections.validation.endBeforeStart
-    } else if (startDate.value && s._startRaw < startDate.value) {
-      dates = S.conceptSections.validation.startBeforeContract
-    } else if (endDate.value && s._endRaw > endDate.value) {
-      dates = S.conceptSections.validation.endAfterContract
-    }
-    return { spec, desc, dates }
-  }),
+  catalogSections.value.map((s) => ({
+    spec: s.specificationNumber.trim() ? '' : S.conceptSections.validation.specRequired,
+    desc: s.description.trim() ? '' : S.conceptSections.validation.descRequired,
+  })),
 )
 
 // ─── Form: section 4 — concepts ──────────────────────────────────────────────
@@ -135,10 +115,10 @@ function removeConcept(idx: number) {
 const resolvedConcepts = computed<CreateConceptInput[]>(() =>
   concepts.value.map((c) => ({
     specificationNumber: c.specificationNumber.trim(),
-    description:         c.description.trim(),
-    unit:                c.unit.trim(),
-    contractedQuantity:  parseFloat(c._qtyRaw) || 0,
-    unitPrice:           Math.round((parseFloat(c._priceRaw) || 0) * 100),
+    description: c.description.trim(),
+    unit: c.unit.trim(),
+    contractedQuantity: parseFloat(c._qtyRaw) || 0,
+    unitPrice: Math.round((parseFloat(c._priceRaw) || 0) * 100),
     // Pass _sectionIdx as a numeric string so the mock can resolve it to the
     // generated ConceptSectionId by position in initialSections.
     sectionId: c._sectionIdx != null ? String(c._sectionIdx) as any : null,
@@ -149,10 +129,10 @@ const totalAmount = computed(() =>
 )
 const conceptErrors = computed(() =>
   concepts.value.map((c) => ({
-    spec:  c.specificationNumber.trim() ? '' : F.concepts.validation.specRequired,
-    desc:  c.description.trim()         ? '' : F.concepts.validation.descRequired,
-    unit:  c.unit.trim()                ? '' : F.concepts.validation.unitRequired,
-    qty:   parseFloat(c._qtyRaw)  > 0  ? '' : F.concepts.validation.qtyPositive,
+    spec: c.specificationNumber.trim() ? '' : F.concepts.validation.specRequired,
+    desc: c.description.trim() ? '' : F.concepts.validation.descRequired,
+    unit: c.unit.trim() ? '' : F.concepts.validation.unitRequired,
+    qty: parseFloat(c._qtyRaw) > 0 ? '' : F.concepts.validation.qtyPositive,
     price: parseFloat(c._priceRaw) > 0 ? '' : F.concepts.validation.pricePositive,
   })),
 )
@@ -162,67 +142,92 @@ const conceptsValid = computed(() =>
 )
 
 // ─── Form: section 5 — schedule ──────────────────────────────────────────────
-type ScheduleDraft = { conceptIndex: number; startRaw: string; endRaw: string }
-const scheduleItems = ref<ScheduleDraft[]>([])
+import { buildPeriods } from '~/data/calc/schedule'
 
-watch(() => concepts.value.length, (newLen, oldLen) => {
-  if (newLen > oldLen) scheduleItems.value.push({ conceptIndex: newLen - 1, startRaw: '', endRaw: '' })
+// periods are derived from the form's start/end/periodicity
+const derivedPeriods = computed(() => {
+  if (!startDate.value || !endDate.value || !periodicity.value) return []
+  return buildPeriods(
+    new Date(`${startDate.value}T12:00:00`),
+    new Date(`${endDate.value}T12:00:00`),
+    periodicity.value,
+  )
 })
 
-const contractStartDate = computed(() => startDate.value ? new Date(`${startDate.value}T12:00:00`) : null)
-const contractEndDate   = computed(() => endDate.value   ? new Date(`${endDate.value}T12:00:00`)   : null)
+// Active period tab in the schedule section (0-based period index)
+const activePeriodTab = ref(0)
+watch(() => derivedPeriods.value.length, (len) => {
+  if (activePeriodTab.value >= len) activePeriodTab.value = Math.max(0, len - 1)
+})
+
+// scheduleGrid[conceptIndex][periodIndex] = planned quantity (string for input)
+// Auto-sized when concepts or periods change.
+const scheduleGrid = ref<string[][]>([])
+
+watch(
+  [() => concepts.value.length, () => derivedPeriods.value.length],
+  ([cLen, pLen]) => {
+    const prev = scheduleGrid.value
+    scheduleGrid.value = Array.from({ length: cLen }, (_, ci) =>
+      Array.from({ length: pLen }, (_, pi) => prev[ci]?.[pi] ?? ''),
+    )
+  },
+  { immediate: true },
+)
+
+// Planned totals per concept (must equal contractedQuantity)
+const conceptTotals = computed(() =>
+  scheduleGrid.value.map((row) =>
+    row.reduce((s, v) => s + (parseFloat(v) || 0), 0),
+  ),
+)
 
 const scheduleErrors = computed(() =>
-  scheduleItems.value.map((s) => {
-    const start = s.startRaw ? new Date(`${s.startRaw}T12:00:00`) : null
-    const end   = s.endRaw   ? new Date(`${s.endRaw}T12:00:00`)   : null
-    if (!start) return F.schedule.validation.startRequired
-    if (!end)   return F.schedule.validation.endRequired
-    if (start > end) return F.schedule.validation.startAfterEnd
-    if (contractStartDate.value && start < contractStartDate.value) return F.schedule.validation.startAfterContract
-    if (contractEndDate.value   && end   > contractEndDate.value)   return F.schedule.validation.endBeforeContract
-    // Bug 2: validate against the concept's assigned section period
-    const concept = concepts.value[s.conceptIndex]
-    const sectionIdx = concept?._sectionIdx
-    if (sectionIdx != null) {
-      const sec = catalogSections.value[sectionIdx]
-      if (sec?._startRaw && s.startRaw && s.startRaw < sec._startRaw)
-        return S.conceptSections.validation.startBeforeSection
-      if (sec?._endRaw && s.endRaw && s.endRaw > sec._endRaw)
-        return S.conceptSections.validation.endAfterSection
-    }
+  concepts.value.map((c, ci) => {
+    const contracted = parseFloat(c._qtyRaw) || 0
+    const total = conceptTotals.value[ci] ?? 0
+    if (contracted > 0 && Math.abs(total - contracted) > 0.001) return F.schedule.validation.sumMismatch
     return null
   }),
 )
 
+const scheduleValid = computed(() =>
+  derivedPeriods.value.length > 0 &&
+  scheduleErrors.value.every((e) => e === null) &&
+  conceptTotals.value.some((t) => t > 0),
+)
+
+// Gantt: one row per concept, spanning from first to last non-zero period
 const ganttRows = computed(() =>
-  scheduleItems.value.map((s) => ({
-    label:     concepts.value[s.conceptIndex]?.description || `Concepto ${s.conceptIndex + 1}`,
-    startDate: s.startRaw ? new Date(`${s.startRaw}T12:00:00`) : null,
-    endDate:   s.endRaw   ? new Date(`${s.endRaw}T12:00:00`)   : null,
-    amount:    resolvedConcepts.value[s.conceptIndex]
-                 ? resolvedConcepts.value[s.conceptIndex].unitPrice * resolvedConcepts.value[s.conceptIndex].contractedQuantity
-                 : 0,
-  })),
+  concepts.value.map((c, ci) => {
+    const row = scheduleGrid.value[ci] ?? []
+    const first = row.findIndex((v) => (parseFloat(v) || 0) > 0)
+    const last = [...row].reverse().findIndex((v) => (parseFloat(v) || 0) > 0)
+    const lastIdx = last >= 0 ? row.length - 1 - last : -1
+    const amount = Math.round((parseFloat(c._priceRaw) || 0) * 100) *
+      (parseFloat(c._qtyRaw) || 0)
+    return {
+      label: c.description || `Concepto ${ci + 1}`,
+      startDate: first >= 0 ? derivedPeriods.value[first]?.start ?? null : null,
+      endDate: lastIdx >= 0 ? derivedPeriods.value[lastIdx]?.end ?? null : null,
+      amount,
+    }
+  }).filter((r) => r.startDate),
 )
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 const errors = computed(() => ({
-  code:          !code.value.trim()  ? F.validation.codeRequired  : null,
-  title:         !title.value.trim() ? F.validation.titleRequired : null,
-  dates:         (!startDate.value || !endDate.value) ? F.validation.datesRequired
-                 : startDate.value >= endDate.value ? F.validation.endBeforeStart : null,
-  anticipo:      (anticipoPct.value === '' || Number(anticipoPct.value) < 0 || Number(anticipoPct.value) > 100) ? F.validation.anticipoRange  : null,
-  iva:           (ivaRate.value     === '' || Number(ivaRate.value)     < 0 || Number(ivaRate.value)     > 100) ? F.validation.ivaRange        : null,
-  retention:     (retentionPct.value === '' || Number(retentionPct.value) < 0 || Number(retentionPct.value) > 100) ? F.validation.retentionRange : null,
+  code: !code.value.trim() ? F.validation.codeRequired : null,
+  title: !title.value.trim() ? F.validation.titleRequired : null,
+  dates: (!startDate.value || !endDate.value) ? F.validation.datesRequired
+    : startDate.value >= endDate.value ? F.validation.endBeforeStart : null,
+  anticipo: (anticipoPct.value === '' || Number(anticipoPct.value) < 0 || Number(anticipoPct.value) > 100) ? F.validation.anticipoRange : null,
+  iva: (ivaRate.value === '' || Number(ivaRate.value) < 0 || Number(ivaRate.value) > 100) ? F.validation.ivaRange : null,
+  retention: (retentionPct.value === '' || Number(retentionPct.value) < 0 || Number(retentionPct.value) > 100) ? F.validation.retentionRange : null,
   superintendent: !superintendentId.value ? F.validation.superintendentRequired : null,
-  supervisor:     !supervisorId.value     ? F.validation.supervisorRequired     : null,
-  concepts:       !conceptsValid.value    ? F.validation.conceptsRequired       : null,
-  schedule:       scheduleErrors.value.some(Boolean)
-                    ? (scheduleErrors.value.some((e) => e?.includes('fuera') || e?.includes('≥') || e?.includes('≤'))
-                        ? F.validation.scheduleOutOfRange
-                        : F.validation.scheduleRequired)
-                    : null,
+  supervisor: !supervisorId.value ? F.validation.supervisorRequired : null,
+  concepts: !conceptsValid.value ? F.validation.conceptsRequired : null,
+  schedule: !scheduleValid.value ? F.validation.scheduleRequired : null,
 }))
 const canSubmit = computed(() => Object.values(errors.value).every((e) => e === null))
 
@@ -236,25 +241,26 @@ async function onSubmit() {
   submitError.value = null
   try {
     const contract = await repos.contracts.create({
-      code:  code.value.trim(),
+      code: code.value.trim(),
       title: title.value.trim(),
-      anticipoPercentage:  Number(anticipoPct.value),
-      ivaRate:             Number(ivaRate.value),
+      anticipoPercentage: Number(anticipoPct.value),
+      ivaRate: Number(ivaRate.value),
       retentionPercentage: Number(retentionPct.value),
       estimatePeriodicity: periodicity.value,
       startDate: new Date(`${startDate.value}T12:00:00`),
-      endDate:   new Date(`${endDate.value}T12:00:00`),
+      endDate: new Date(`${endDate.value}T12:00:00`),
       superintendentId: superintendentId.value as string,
-      supervisorId:     supervisorId.value     as string,
-      financialId:      financialId.value,
+      supervisorId: supervisorId.value as string,
+      financialId: financialId.value,
       contractorCorporationId: contractorCorporationId.value,
       initialSections: resolvedSections.value,
       initialConcepts: resolvedConcepts.value,
-      scheduleItems: scheduleItems.value.map((s) => ({
-        conceptIndex: s.conceptIndex,
-        startDate: new Date(`${s.startRaw}T12:00:00`),
-        endDate:   new Date(`${s.endRaw}T12:00:00`),
-      })),
+      scheduleEntries: scheduleGrid.value.flatMap((row, ci) =>
+        row.flatMap((v, pi) => {
+          const qty = parseFloat(v) || 0
+          return qty > 0 ? [{ conceptIndex: ci, periodIndex: pi, plannedQuantity: qty }] : []
+        }),
+      ),
     })
     createdContractId.value = contract.id
     // Fetch the predefined 'contract' folder to upload into it
@@ -278,8 +284,8 @@ type UploadEntry = {
   errorMsg: string | null
 }
 const uploadQueue = ref<UploadEntry[]>([])
-const isDragging  = ref(false)
-let   _entryId = 0
+const isDragging = ref(false)
+let _entryId = 0
 
 function makeEntry(file: File): UploadEntry {
   return { id: String(++_entryId), file, status: 'queued', progress: 0, errorMsg: null }
@@ -293,14 +299,14 @@ function onDrop(e: DragEvent) {
 function onFileInput(e: Event) {
   const files = Array.from((e.target as HTMLInputElement).files ?? [])
   uploadQueue.value.push(...files.map(makeEntry))
-  ;(e.target as HTMLInputElement).value = ''
+    ; (e.target as HTMLInputElement).value = ''
 }
 function removeQueued(id: string) {
   uploadQueue.value = uploadQueue.value.filter((e) => e.id !== id)
 }
 
 const anyUploading = computed(() => uploadQueue.value.some((e) => e.status === 'uploading'))
-const allDone      = computed(() => uploadQueue.value.length > 0 && uploadQueue.value.every((e) => e.status === 'done'))
+const allDone = computed(() => uploadQueue.value.length > 0 && uploadQueue.value.every((e) => e.status === 'done'))
 
 async function uploadAll() {
   if (!createdContractId.value || !contractFolderId.value) return
@@ -326,18 +332,17 @@ async function uploadOne(entry: UploadEntry) {
 }
 
 function formatBytes(n: number) {
-  if (n < 1024)        return `${n} B`
-  if (n < 1_048_576)   return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024) return `${n} B`
+  if (n < 1_048_576) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / 1_048_576).toFixed(1)} MB`
 }
 
 const sections = [
-  { id: 'sec-general',   label: F.sections.general },
-  { id: 'sec-rates',     label: F.sections.rates },
-  { id: 'sec-parties',   label: F.sections.parties },
-  { id: 'sec-cat-secs',  label: 'Secciones' },
-  { id: 'sec-concepts',  label: F.sections.concepts },
-  { id: 'sec-schedule',  label: F.sections.schedule },
+  { id: 'sec-general', label: F.sections.general },
+  { id: 'sec-rates', label: F.sections.rates },
+  { id: 'sec-parties', label: F.sections.parties },
+  { id: 'sec-concepts', label: 'Partidas y conceptos' },
+  { id: 'sec-schedule', label: F.sections.schedule },
 ]
 </script>
 
@@ -346,13 +351,9 @@ const sections = [
     <template #header>
       <UDashboardNavbar :title="F.title">
         <template #leading>
-          <UButton
-            icon="i-lucide-arrow-left"
-            color="neutral"
-            variant="ghost"
+          <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost"
             :to="phase === 'upload' && createdContractId ? `/contracts/${createdContractId}` : '/'"
-            :aria-label="S.common.back"
-          />
+            :aria-label="S.common.back" />
         </template>
       </UDashboardNavbar>
     </template>
@@ -366,15 +367,12 @@ const sections = [
       <!-- ══════════════════════════════════════════════════════════════════
            PHASE 1 — contract form
       ══════════════════════════════════════════════════════════════════════ -->
-      <div v-else-if="phase === 'form'" class="flex flex-col gap-6">
+      <div v-else-if="phase === 'form'" class="space-y-6">
         <!-- Section nav -->
-        <nav class="sticky top-0 z-10 -mx-4 mb-2 flex gap-1 overflow-x-auto border-b border-default bg-default/75 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
-          <a
-            v-for="s in sections"
-            :key="s.id"
-            :href="`#${s.id}`"
-            class="shrink-0 rounded-md px-2.5 py-1 text-sm text-muted transition-colors hover:bg-elevated hover:text-default"
-          >
+        <nav
+          class="sticky top-0 z-10 -mx-4 mb-2 flex gap-1 overflow-x-auto border-b border-default bg-default/75 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+          <a v-for="s in sections" :key="s.id" :href="`#${s.id}`"
+            class="shrink-0 rounded-md px-2.5 py-1 text-sm text-muted transition-colors hover:bg-elevated hover:text-default">
             {{ s.label }}
           </a>
         </nav>
@@ -438,24 +436,14 @@ const sections = [
             <div class="sm:col-span-2 lg:col-span-4">
               <UFormField :label="F.fields.estimatePeriodicity">
                 <div class="flex flex-wrap gap-3">
-                  <label
-                    v-for="opt in periodicityOptions"
-                    :key="opt.value"
+                  <label v-for="opt in periodicityOptions" :key="opt.value"
                     class="flex cursor-pointer items-center gap-2.5 rounded-lg border px-4 py-2.5 text-sm transition-colors"
                     :class="periodicity === opt.value
                       ? 'border-primary bg-primary/5 text-primary font-medium'
-                      : 'border-default bg-default text-default hover:bg-elevated'"
-                  >
-                    <input
-                      v-model="periodicity"
-                      type="radio"
-                      :value="opt.value"
-                      class="sr-only"
-                    />
-                    <UIcon
-                      :name="opt.value === 'monthly' ? 'i-lucide-calendar' : 'i-lucide-calendar-days'"
-                      class="size-4"
-                    />
+                      : 'border-default bg-default text-default hover:bg-elevated'">
+                    <input v-model="periodicity" type="radio" :value="opt.value" class="sr-only" />
+                    <UIcon :name="opt.value === 'monthly' ? 'i-lucide-calendar' : 'i-lucide-calendar-days'"
+                      class="size-4" />
                     {{ opt.label }}
                   </label>
                 </div>
@@ -474,86 +462,66 @@ const sections = [
           </template>
           <div class="grid gap-4 sm:grid-cols-2">
             <UFormField :label="F.fields.superintendent" :error="errors.superintendent || undefined">
-              <USelect
-                v-model="superintendentId"
+              <USelect v-model="superintendentId"
                 :items="(refs?.superintendents ?? []).map((u) => ({ label: u.fullName, value: u.id }))"
-                :placeholder="`— ${F.fields.superintendent} —`"
-                class="w-full"
-              />
+                :placeholder="`— ${F.fields.superintendent} —`" class="w-full" />
             </UFormField>
             <UFormField :label="F.fields.contractor" :hint="F.fields.contractorDerived">
               <UInput :model-value="corpName ?? ''" disabled class="w-full" :placeholder="F.fields.contractorDerived" />
             </UFormField>
             <UFormField :label="F.fields.supervisor" :error="errors.supervisor || undefined">
-              <USelect
-                v-model="supervisorId"
+              <USelect v-model="supervisorId"
                 :items="(refs?.supervisors ?? []).map((u) => ({ label: u.fullName, value: u.id }))"
-                :placeholder="`— ${F.fields.supervisor} —`"
-                class="w-full"
-              />
+                :placeholder="`— ${F.fields.supervisor} —`" class="w-full" />
             </UFormField>
             <UFormField :label="F.fields.financial">
-              <USelect
-                v-model="financialId"
+              <USelect v-model="financialId"
                 :items="(refs?.financials ?? []).map((u) => ({ label: u.fullName, value: u.id }))"
-                :placeholder="`— ${F.fields.financial} —`"
-                class="w-full"
-              />
+                :placeholder="`— ${F.fields.financial} —`" class="w-full" />
             </UFormField>
           </div>
         </UCard>
 
-        <!-- ③.5 Secciones del catálogo -->
-        <UCard id="sec-cat-secs" class="scroll-mt-16" :ui="{ body: 'p-0 sm:p-0' }">
-          <template #header>
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 font-medium">
-                <UIcon name="i-lucide-layers" class="size-4 text-muted" />
-                {{ S.conceptSections.addSection }} ({{ catalogSections.length }})
-              </div>
-              <UButton size="sm" icon="i-lucide-plus" color="neutral" variant="outline" @click="addSection">
-                {{ S.conceptSections.addSection }}
-              </UButton>
-            </div>
-          </template>
-          <div v-if="!catalogSections.length" class="px-4 py-6 text-sm text-muted">
-            Las secciones son opcionales. Si las agregas, los conceptos quedarán agrupados.
-          </div>
-          <div v-else class="divide-y divide-default">
-            <div v-for="(sec, idx) in catalogSections" :key="idx" class="grid gap-3 px-4 py-3 sm:grid-cols-2 lg:grid-cols-5">
-              <UFormField :label="S.conceptSections.specificationNumber" :error="sectionErrors[idx]?.spec || undefined">
-                <UInput v-model="sec.specificationNumber" class="w-full" placeholder="A" />
-              </UFormField>
-              <UFormField :label="S.conceptSections.description" :error="sectionErrors[idx]?.desc || undefined" class="lg:col-span-2">
-                <UInput v-model="sec.description" class="w-full" placeholder="Trabajos preliminares" />
-              </UFormField>
-              <UFormField :label="S.conceptSections.from" :error="sectionErrors[idx]?.dates || undefined">
-                <UInput v-model="sec._startRaw" type="date" :min="startDate" :max="endDate" class="w-full" />
-              </UFormField>
-              <div class="flex items-end gap-2">
-                <UFormField :label="S.conceptSections.to" class="flex-1">
-                  <UInput v-model="sec._endRaw" type="date" :min="sec._startRaw || startDate" :max="endDate" class="w-full" />
-                </UFormField>
-                <UButton icon="i-lucide-x" size="sm" color="neutral" variant="ghost" class="mb-0.5" @click="removeSection(idx)" />
-              </div>
-            </div>
-          </div>
-        </UCard>
-
-        <!-- ④ Catálogo de conceptos -->
+        <!-- ④ Partidas y conceptos ─────────────────────────────────────── -->
         <UCard id="sec-concepts" class="scroll-mt-16" :ui="{ body: 'p-0 sm:p-0' }">
           <template #header>
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 font-medium">
                 <UIcon name="i-lucide-list" class="size-4 text-muted" />
-                {{ F.sections.concepts }}
+                Partidas y conceptos
               </div>
-              <UButton size="sm" icon="i-lucide-plus" color="neutral" variant="outline" @click="addConcept">
-                {{ F.concepts.add }}
-              </UButton>
+              <div class="flex gap-2">
+                <UButton size="sm" icon="i-lucide-layers" color="neutral" variant="outline" @click="addSection">
+                  Agregar partida
+                </UButton>
+                <UButton size="sm" icon="i-lucide-plus" color="neutral" variant="outline" @click="addConcept">
+                  {{ F.concepts.add }}
+                </UButton>
+              </div>
             </div>
           </template>
-          <p class="border-b border-default px-4 py-2 text-xs text-muted">{{ F.concepts.hint }}</p>
+
+          <p class="border-b border-default px-4 py-2 text-xs text-muted">
+            {{ F.concepts.hint }}
+          </p>
+
+          <!-- Partidas (sections) ─────────────────────────────────────────── -->
+          <div v-if="catalogSections.length" class="border-b border-default">
+            <div class="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted">
+              Partidas de conceptos
+            </div>
+            <div class="divide-y divide-default">
+              <div v-for="(sec, idx) in catalogSections" :key="idx" class="flex items-center gap-3 px-4 py-2.5">
+                <UInput v-model="sec.specificationNumber" class="w-24" placeholder="A"
+                  :color="sectionErrors[idx]?.spec ? 'error' : undefined" />
+                <UInput v-model="sec.description" class="flex-1" placeholder="Nombre de la partida"
+                  :color="sectionErrors[idx]?.desc ? 'error' : undefined" />
+                <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" @click="removeSection(idx)" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Concepts table ──────────────────────────────────────────────── -->
           <div v-if="!concepts.length" class="px-4 py-8 text-center text-sm text-muted">
             {{ F.concepts.empty }}
           </div>
@@ -567,46 +535,54 @@ const sections = [
                   <th class="px-3 py-2 text-right font-medium">{{ F.concepts.columns.qty }}</th>
                   <th class="px-3 py-2 text-right font-medium">{{ F.concepts.columns.unitPrice }}</th>
                   <th class="px-3 py-2 text-right font-medium">{{ F.concepts.columns.amount }}</th>
-                  <th v-if="catalogSections.length" class="px-3 py-2 text-left font-medium">Sección</th>
+                  <th v-if="catalogSections.length" class="px-3 py-2 text-left font-medium">Partida</th>
                   <th class="px-2 py-2" />
                 </tr>
               </thead>
               <tbody class="divide-y divide-default">
                 <tr v-for="(c, idx) in concepts" :key="idx" class="align-top">
                   <td class="px-3 py-2">
-                    <UInput v-model="c.specificationNumber" class="w-28" placeholder="E-101" :color="conceptErrors[idx]?.spec ? 'error' : undefined" />
-                    <p v-if="conceptErrors[idx]?.spec" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].spec }}</p>
+                    <UInput v-model="c.specificationNumber" class="w-28" placeholder="E-101"
+                      :color="conceptErrors[idx]?.spec ? 'error' : undefined" />
+                    <p v-if="conceptErrors[idx]?.spec" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].spec }}
+                    </p>
                   </td>
                   <td class="min-w-[14rem] px-3 py-2">
-                    <UInput v-model="c.description" class="w-full" :color="conceptErrors[idx]?.desc ? 'error' : undefined" />
-                    <p v-if="conceptErrors[idx]?.desc" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].desc }}</p>
+                    <UInput v-model="c.description" class="w-full"
+                      :color="conceptErrors[idx]?.desc ? 'error' : undefined" />
+                    <p v-if="conceptErrors[idx]?.desc" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].desc }}
+                    </p>
                   </td>
                   <td class="px-3 py-2">
-                    <UInput v-model="c.unit" class="w-20" placeholder="m2" :color="conceptErrors[idx]?.unit ? 'error' : undefined" />
-                    <p v-if="conceptErrors[idx]?.unit" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].unit }}</p>
+                    <UInput v-model="c.unit" class="w-20" placeholder="m2"
+                      :color="conceptErrors[idx]?.unit ? 'error' : undefined" />
+                    <p v-if="conceptErrors[idx]?.unit" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].unit }}
+                    </p>
                   </td>
                   <td class="px-3 py-2">
-                    <UInput v-model="c._qtyRaw" type="number" min="0" step="any" class="w-24 [&_input]:text-right" :color="conceptErrors[idx]?.qty ? 'error' : undefined" />
+                    <UInput v-model="c._qtyRaw" type="number" min="0" step="any" class="w-24 [&_input]:text-right"
+                      :color="conceptErrors[idx]?.qty ? 'error' : undefined" />
                     <p v-if="conceptErrors[idx]?.qty" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].qty }}</p>
                   </td>
                   <td class="px-3 py-2">
-                    <UInput v-model="c._priceRaw" type="number" min="0" step="0.01" class="w-32 [&_input]:text-right" :color="conceptErrors[idx]?.price ? 'error' : undefined">
+                    <UInput v-model="c._priceRaw" type="number" min="0" step="0.01" class="w-32 [&_input]:text-right"
+                      :color="conceptErrors[idx]?.price ? 'error' : undefined">
                       <template #leading><span class="pl-1 text-xs text-muted">$</span></template>
                     </UInput>
-                    <p v-if="conceptErrors[idx]?.price" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].price }}</p>
+                    <p v-if="conceptErrors[idx]?.price" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].price }}
+                    </p>
                   </td>
                   <td class="px-3 py-2 text-right tabular-nums text-muted">
                     {{ formatMoney(Math.round((parseFloat(c._priceRaw) || 0) * 100) * (parseFloat(c._qtyRaw) || 0)) }}
                   </td>
                   <td v-if="catalogSections.length" class="px-3 py-2">
-                    <USelect
-                      v-model="c._sectionIdx"
-                      :items="[
-                        { label: '— Sin sección —', value: null },
-                        ...catalogSections.map((s, i) => ({ label: `${s.specificationNumber || i+1} ${s.description}`, value: i }))
-                      ]"
-                      class="w-40"
-                    />
+                    <USelect v-model="c._sectionIdx" :items="[
+                      { label: '— Sin partida —', value: null },
+                      ...catalogSections.map((s, i) => ({
+                        label: `${s.specificationNumber || (i + 1)} ${s.description}`,
+                        value: i,
+                      }))
+                    ]" class="w-44" />
                   </td>
                   <td class="px-2 py-2">
                     <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" @click="removeConcept(idx)" />
@@ -615,8 +591,12 @@ const sections = [
               </tbody>
               <tfoot class="border-t-2 border-default bg-elevated/50">
                 <tr>
-                  <td colspan="5" class="px-3 py-2 text-right text-xs font-medium text-muted">{{ F.concepts.total }}</td>
-                  <td class="px-3 py-2 text-right tabular-nums font-semibold text-highlighted">{{ formatMoney(totalAmount) }}</td>
+                  <td colspan="5" class="px-3 py-2 text-right text-xs font-medium text-muted">{{ F.concepts.total }}
+                  </td>
+                  <td class="px-3 py-2 text-right tabular-nums font-semibold text-highlighted">{{
+                    formatMoney(totalAmount) }}
+                  </td>
+                  <td v-if="catalogSections.length" />
                   <td />
                 </tr>
               </tfoot>
@@ -624,80 +604,130 @@ const sections = [
           </div>
         </UCard>
 
-        <!-- ⑤ Programa de obra -->
-        <UCard v-if="concepts.length > 0" id="sec-schedule" class="scroll-mt-16" :ui="{ body: 'p-0 sm:p-0' }">
+        <!-- ⑤ Programa de obra ────────────────────────────────────────────── -->
+        <UCard v-if="concepts.length > 0 && derivedPeriods.length > 0" id="sec-schedule" class="scroll-mt-16"
+          :ui="{ body: 'p-0 sm:p-0' }">
           <template #header>
             <div class="flex items-center gap-2 font-medium">
               <UIcon name="i-lucide-chart-gantt" class="size-4 text-muted" />
               {{ F.sections.schedule }}
             </div>
           </template>
+
           <p class="border-b border-default px-4 py-2 text-xs text-muted">{{ F.schedule.hint }}</p>
-          <div class="overflow-x-auto">
-            <table class="w-full min-w-[42rem] text-sm">
-              <thead class="border-b border-default bg-elevated/50 text-xs text-muted">
-                <tr>
-                  <th class="px-3 py-2 text-left font-medium">{{ F.schedule.columns.concept }}</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ F.schedule.columns.amount }}</th>
-                  <th class="px-3 py-2 text-center font-medium text-success">{{ F.schedule.columns.start }}</th>
-                  <th class="px-3 py-2 text-center font-medium text-success">{{ F.schedule.columns.end }}</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ F.schedule.columns.duration }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-default">
-                <tr v-for="(s, idx) in scheduleItems" :key="s.conceptIndex" class="align-top" :class="scheduleErrors[idx] ? 'bg-error/5' : ''">
-                  <td class="min-w-[12rem] px-3 py-2.5">
-                    <div class="font-medium text-highlighted">{{ concepts[s.conceptIndex]?.description || `Concepto ${s.conceptIndex + 1}` }}</div>
-                    <div class="font-mono text-xs text-muted">{{ concepts[s.conceptIndex]?.specificationNumber }}</div>
-                  </td>
-                  <td class="px-3 py-2.5 text-right tabular-nums text-muted">
-                    {{ formatMoney((resolvedConcepts[s.conceptIndex]?.unitPrice ?? 0) * (resolvedConcepts[s.conceptIndex]?.contractedQuantity ?? 0)) }}
-                  </td>
-                  <td class="px-3 py-2.5">
-                    <UInput v-model="s.startRaw" type="date" :min="startDate" :max="endDate" class="w-36 [&_input]:text-success" />
-                  </td>
-                  <td class="px-3 py-2.5">
-                    <UInput v-model="s.endRaw" type="date" :min="s.startRaw || startDate" :max="endDate" class="w-36 [&_input]:text-success" />
-                  </td>
-                  <td class="px-3 py-2.5 text-right tabular-nums text-muted">
-                    <template v-if="s.startRaw && s.endRaw">
-                      {{ Math.round((new Date(`${s.endRaw}T12:00:00`).getTime() - new Date(`${s.startRaw}T12:00:00`).getTime()) / 86_400_000) }}
-                    </template>
-                    <span v-else>—</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+
+          <!-- Period tabs ──────────────────────────────────────────────────── -->
+          <div class="flex overflow-x-auto border-b border-default bg-elevated/30">
+            <button v-for="(period, pi) in derivedPeriods" :key="pi"
+              class="shrink-0 border-b-2 px-4 py-2 text-sm transition-colors" :class="activePeriodTab === pi
+                ? 'border-primary font-semibold text-primary'
+                : 'border-transparent text-muted hover:text-default'" @click="activePeriodTab = pi">
+              <span class="font-semibold">P{{ pi + 1 }}</span>
+              <span class="ml-1.5 text-[11px] font-normal opacity-70">
+                {{ period.end.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) }}
+              </span>
+            </button>
           </div>
 
-          <!-- Per-row errors -->
+          <!-- Active period input ──────────────────────────────────────────── -->
+          <div v-if="derivedPeriods[activePeriodTab]" class="px-4 py-3">
+            <div class="mb-3 text-xs text-muted">
+              {{ derivedPeriods[activePeriodTab].start.toLocaleDateString('es-MX', {
+                day: '2-digit', month: 'long',
+                year:
+              'numeric' }) }}
+              –
+              {{ derivedPeriods[activePeriodTab].end.toLocaleDateString('es-MX', {
+                day: '2-digit', month: 'long', year:
+              'numeric' }) }}
+            </div>
+
+            <!-- Grouped by section ─────────────────────────────────────────── -->
+            <div class="space-y-4">
+              <!-- Section groups -->
+              <template v-for="(sec, si) in catalogSections" :key="si">
+                <div>
+                  <div class="mb-1.5 flex items-center gap-2">
+                    <span class="font-mono text-xs font-semibold text-muted">{{ sec.specificationNumber }}</span>
+                    <span class="text-sm font-semibold text-highlighted">{{ sec.description }}</span>
+                  </div>
+                  <div class="space-y-1">
+                    <div v-for="(c, ci) in concepts.filter(c => c._sectionIdx === si)" :key="ci"
+                      class="flex items-center gap-3">
+                      <div class="min-w-0 flex-1">
+                        <span class="font-mono text-xs text-muted">{{ c.specificationNumber }}</span>
+                        <span class="ml-2 text-sm text-highlighted">{{ c.description }}</span>
+                        <span class="ml-1 text-xs text-muted">({{ c.unit }})</span>
+                      </div>
+                      <div class="flex items-center gap-1.5 shrink-0">
+                        <UInput v-model="scheduleGrid[concepts.indexOf(c)][activePeriodTab]" type="number" min="0"
+                          step="any" class="w-28 [&_input]:text-right [&_input]:text-success [&_input]:font-medium" />
+                        <span class="text-xs text-muted">/ {{ parseFloat(c._qtyRaw) || 0 }} {{ c.unit }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Concepts without a section ──────────────────────────────── -->
+              <div v-if="concepts.some(c => c._sectionIdx == null)">
+                <div v-if="catalogSections.length" class="mb-1.5 text-sm font-semibold text-muted">Sin partida</div>
+                <div class="space-y-1">
+                  <div v-for="(c, ci) in concepts.filter(c => c._sectionIdx == null)" :key="ci"
+                    class="flex items-center gap-3">
+                    <div class="min-w-0 flex-1">
+                      <span class="font-mono text-xs text-muted">{{ c.specificationNumber }}</span>
+                      <span class="ml-2 text-sm text-highlighted">{{ c.description }}</span>
+                      <span class="ml-1 text-xs text-muted">({{ c.unit }})</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <UInput v-model="scheduleGrid[concepts.indexOf(c)][activePeriodTab]" type="number" min="0"
+                        step="any" class="w-28 [&_input]:text-right [&_input]:text-success [&_input]:font-medium" />
+                      <span class="text-xs text-muted">/ {{ parseFloat(c._qtyRaw) || 0 }} {{ c.unit }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Period totals ───────────────────────────────────────────────── -->
+            <div class="mt-3 border-t border-default pt-3 text-xs text-muted space-y-0.5">
+              <div v-for="(c, ci) in concepts" :key="ci" class="flex items-center justify-between"
+                :class="scheduleErrors[ci] ? 'text-error' : ''">
+                <span class="truncate">{{ c.description || `Concepto ${ci + 1}` }}</span>
+                <span class="shrink-0 tabular-nums ml-4">
+                  {{ (conceptTotals[ci] ?? 0).toFixed(2) }} / {{ parseFloat(c._qtyRaw) || 0 }} {{ c.unit }}
+                  <span v-if="scheduleErrors[ci]" class="ml-1 text-error">⚠</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Errors and all-clear ─────────────────────────────────────────── -->
           <div v-if="scheduleErrors.some(Boolean)" class="border-t border-default px-4 py-2 space-y-0.5">
-            <p v-for="(err, idx) in scheduleErrors" :key="idx" class="text-xs text-error">
+            <p v-for="(err, ci) in scheduleErrors" :key="ci" class="text-xs text-error">
               <template v-if="err">
-                <span class="font-mono">{{ concepts[scheduleItems[idx]?.conceptIndex]?.specificationNumber }}</span>: {{ err }}
+                <span class="font-mono">{{ concepts[ci]?.specificationNumber }}</span>: {{ err }}
               </template>
             </p>
           </div>
-          <p v-else-if="scheduleItems.length && scheduleItems.every((s) => s.startRaw && s.endRaw)" class="border-t border-default px-4 py-2 text-xs text-success">
+          <p v-else-if="scheduleValid" class="border-t border-default px-4 py-2 text-xs text-success">
             ✓ {{ F.schedule.allClear }}
           </p>
 
-          <!-- Gantt live preview -->
-          <div v-if="ganttRows.some((r) => r.startDate)" class="border-t border-default px-4 py-4">
+          <!-- Gantt preview ───────────────────────────────────────────────── -->
+          <div v-if="ganttRows.length" class="border-t border-default px-4 py-4">
             <p class="mb-3 text-sm font-medium text-default">{{ F.schedule.ganttTitle }}</p>
-            <GanttChart
-              :rows="ganttRows"
-              :contract-start="contractStartDate"
-              :contract-end="contractEndDate"
-              :height="Math.max(160, ganttRows.length * 36 + 60)"
-            />
+            <GanttChart :rows="ganttRows" :contract-start="new Date(`${startDate}T12:00:00`)"
+              :contract-end="new Date(`${endDate}T12:00:00`)" :height="Math.max(160, ganttRows.length * 36 + 60)" />
           </div>
         </UCard>
 
         <UAlert v-if="submitError" :title="submitError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
 
         <!-- Sticky submit bar -->
-        <div class="sticky bottom-0 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+        <div
+          class="sticky bottom-0 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
           <div class="flex flex-col">
             <span class="text-xs text-muted">{{ F.concepts.total }}</span>
             <span class="text-lg font-semibold tabular-nums text-primary">{{ formatMoney(totalAmount) }}</span>
@@ -717,7 +747,7 @@ const sections = [
       <!-- ══════════════════════════════════════════════════════════════════
            PHASE 2 — file upload (contract already created)
       ══════════════════════════════════════════════════════════════════════ -->
-      <template v-else-if="phase === 'upload'">
+      <div v-else-if="phase === 'upload'" class="space-y-6">
         <UCard>
           <template #header>
             <div class="flex items-center gap-2 font-medium">
@@ -732,108 +762,63 @@ const sections = [
           <div
             class="relative mb-4 flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed transition-colors"
             :class="isDragging ? 'border-primary bg-primary/5' : 'border-default bg-elevated/40 hover:border-primary/50'"
-            @dragover.prevent="isDragging = true"
-            @dragleave.prevent="isDragging = false"
-            @drop.prevent="onDrop"
-            @click="($refs.fileInput as HTMLInputElement).click()"
-          >
+            @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false" @drop.prevent="onDrop"
+            @click="($refs.fileInput as HTMLInputElement).click()">
             <UIcon name="i-lucide-upload-cloud" class="size-8 text-muted" />
             <p class="text-sm text-muted">
               {{ isDragging ? F.files.dropzoneActive : F.files.dropzone }}
             </p>
-            <input
-              ref="fileInput"
-              type="file"
-              multiple
-              class="sr-only"
-              @change="onFileInput"
-            />
+            <input ref="fileInput" type="file" multiple class="sr-only" @change="onFileInput" />
           </div>
 
           <!-- Queue -->
           <ul v-if="uploadQueue.length" class="mb-4 divide-y divide-default rounded-lg border border-default">
-            <li
-              v-for="entry in uploadQueue"
-              :key="entry.id"
-              class="flex items-center gap-3 px-3 py-2.5"
-            >
-              <UIcon
-                :name="entry.status === 'done'      ? 'i-lucide-check-circle-2'
-                       : entry.status === 'error'   ? 'i-lucide-alert-circle'
-                       : entry.status === 'uploading' ? 'i-lucide-loader-circle'
-                       : 'i-lucide-file'"
-                class="size-4 shrink-0"
-                :class="entry.status === 'done'  ? 'text-success'
-                       : entry.status === 'error' ? 'text-error'
-                       : entry.status === 'uploading' ? 'text-primary animate-spin'
-                       : 'text-muted'"
-              />
+            <li v-for="entry in uploadQueue" :key="entry.id" class="flex items-center gap-3 px-3 py-2.5">
+              <UIcon :name="entry.status === 'done' ? 'i-lucide-check-circle-2'
+                : entry.status === 'error' ? 'i-lucide-alert-circle'
+                  : entry.status === 'uploading' ? 'i-lucide-loader-circle'
+                    : 'i-lucide-file'" class="size-4 shrink-0" :class="entry.status === 'done' ? 'text-success'
+                        : entry.status === 'error' ? 'text-error'
+                          : entry.status === 'uploading' ? 'text-primary animate-spin'
+                            : 'text-muted'" />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center justify-between gap-2">
                   <span class="truncate text-sm text-highlighted">{{ entry.file.name }}</span>
                   <span class="shrink-0 text-xs text-muted">{{ formatBytes(entry.file.size) }}</span>
                 </div>
                 <!-- Progress bar while uploading -->
-                <div v-if="entry.status === 'uploading'" class="mt-1 h-1 w-full overflow-hidden rounded-full bg-elevated">
-                  <div
-                    class="h-full rounded-full bg-primary transition-all"
-                    :style="`width:${Math.round(entry.progress * 100)}%`"
-                  />
+                <div v-if="entry.status === 'uploading'"
+                  class="mt-1 h-1 w-full overflow-hidden rounded-full bg-elevated">
+                  <div class="h-full rounded-full bg-primary transition-all"
+                    :style="`width:${Math.round(entry.progress * 100)}%`" />
                 </div>
                 <p v-if="entry.status === 'error'" class="mt-0.5 text-xs text-error">{{ entry.errorMsg }}</p>
               </div>
-              <UButton
-                v-if="entry.status === 'queued' || entry.status === 'error'"
-                icon="i-lucide-x"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                :aria-label="F.files.removeQueued"
-                @click="removeQueued(entry.id)"
-              />
-              <UButton
-                v-if="entry.status === 'error'"
-                icon="i-lucide-refresh-cw"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                @click="uploadOne(entry)"
-              />
+              <UButton v-if="entry.status === 'queued' || entry.status === 'error'" icon="i-lucide-x" size="xs"
+                color="neutral" variant="ghost" :aria-label="F.files.removeQueued" @click="removeQueued(entry.id)" />
+              <UButton v-if="entry.status === 'error'" icon="i-lucide-refresh-cw" size="xs" color="neutral"
+                variant="ghost" @click="uploadOne(entry)" />
             </li>
           </ul>
 
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <UButton
-              v-if="uploadQueue.some((e) => e.status === 'queued')"
-              icon="i-lucide-upload"
-              color="neutral"
-              variant="outline"
-              :loading="anyUploading"
-              @click="uploadAll"
-            >
+            <UButton v-if="uploadQueue.some((e) => e.status === 'queued')" icon="i-lucide-upload" color="neutral"
+              variant="outline" :loading="anyUploading" @click="uploadAll">
               {{ F.files.uploadAll }}
             </UButton>
             <div v-else />
 
             <div class="flex gap-3">
-              <UButton
-                v-if="!allDone"
-                color="neutral"
-                variant="ghost"
-                :to="`/contracts/${createdContractId}`"
-              >
+              <UButton v-if="!allDone" color="neutral" variant="ghost" :to="`/contracts/${createdContractId}`">
                 {{ F.files.skip }}
               </UButton>
-              <UButton
-                icon="i-lucide-arrow-right"
-                :to="`/contracts/${createdContractId}`"
-              >
+              <UButton icon="i-lucide-arrow-right" :to="`/contracts/${createdContractId}`">
                 {{ F.files.finalize }}
               </UButton>
             </div>
           </div>
         </UCard>
-      </template>
+      </div>
     </template>
   </UDashboardPanel>
 </template>

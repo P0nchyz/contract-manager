@@ -1,6 +1,7 @@
 <!-- app/pages/contracts/[contractId]/estimates/new.vue -->
 <script setup lang="ts">
 import { S } from '~/constants/strings'
+import { buildPeriods } from '~/data/calc/schedule'
 import { isRepositoryError } from '~/data/errors'
 import { buildLineItem, buildSummary, DEFAULT_RATES } from '~/data/calc/estimate'
 import type { EstimateLineItem } from '~/data/models'
@@ -23,7 +24,7 @@ const toInputDate = (d: Date | string) => new Date(d).toISOString().slice(0, 10)
 const { data, status, error, refresh } = await useAsyncData(
   () => `estimate-form-${contractId.value}-${editId.value ?? 'new'}`,
   async () => {
-    const [contract, sections, concepts, allEstimates, corporations, logNotes, files] = await Promise.all([
+    const [contract, sections, concepts, allEstimates, corporations, logNotes, files, schedule] = await Promise.all([
       repos.contracts.getById(contractId.value),
       repos.concepts.listSectionsByContract(contractId.value),
       repos.concepts.listByContract(contractId.value),
@@ -31,7 +32,23 @@ const { data, status, error, refresh } = await useAsyncData(
       repos.corporations.list().catch(() => []),
       repos.logNotes.listByContract(contractId.value).catch(() => []),
       repos.files.listFiles(contractId.value).catch(() => []),
+      repos.schedule.getByContract(contractId.value).catch(() => null),
     ])
+    // Build all periods for this contract
+    const periods = buildPeriods(
+      new Date(contract.startDate),
+      new Date(contract.endDate),
+      contract.estimatePeriodicity ?? 'monthly',
+    )
+    // A period is available if no non-rejected estimate occupies it
+    const takenPeriods = new Set(
+      allEstimates
+        .filter((e) => e.status !== 'rejected')
+        .map((e) => e.periodIndex),
+    )
+    const availablePeriods = periods
+      .map((p, i) => ({ ...p, index: i + 1 })) // 1-based
+      .filter((p) => !takenPeriods.has(p.index))
     const editing = editId.value
       ? await repos.estimates.getById(editId.value).catch(() => null)
       : null
@@ -53,16 +70,18 @@ const { data, status, error, refresh } = await useAsyncData(
       upToLast,
       logNotes,
       files,
+      periods,
+      availablePeriods,
       contractorName: contractor?.name ?? '—',
-      estimateNumber: editing ? editing.number : prior.length + 1,
+      estimateNumber: editing ? editing.number : (availablePeriods[0]?.index ?? prior.length + 1),
       editing,
+      schedule,
     }
   },
 )
 
 // --- Editable state ----------------------------------------------------------
-const periodStart = ref('')
-const periodEnd = ref('')
+const selectedPeriodIndex = ref<number | null>(null)
 const qty = reactive<Record<string, number>>({})
 const selectedConceptIds = ref<string[]>([]) // concepts chosen by the user
 const selectedFiles = ref<string[]>([])
@@ -77,8 +96,7 @@ watchEffect(() => {
     qty[c.id] = editing?.lineItems.find((li) => li.conceptId === c.id)?.inThisEstimate ?? 0
   }
   if (editing) {
-    periodStart.value = toInputDate(editing.periodStart)
-    periodEnd.value = toInputDate(editing.periodEnd)
+    selectedPeriodIndex.value = editing.periodIndex ?? null
     selectedFiles.value = [...editing.evidenceFileIds]
     selectedLogNotes.value = [...editing.linkedLogNoteIds]
     // Pre-select concepts that had a non-zero quantity in the saved draft.
@@ -186,10 +204,12 @@ function toggle(list: string[], id: string) {
 }
 
 // --- Validation --------------------------------------------------------------
-const periodError = computed(() => {
-  if (!periodStart.value || !periodEnd.value) return F.validation.periodRequired
-  if (periodEnd.value < periodStart.value) return F.validation.periodOrder
-  return null
+const periodError = computed(() =>
+  !selectedPeriodIndex.value ? F.validation.periodRequired : null,
+)
+const selectedPeriodDates = computed(() => {
+  if (!selectedPeriodIndex.value || !data.value) return null
+  return data.value.periods[selectedPeriodIndex.value - 1] ?? null
 })
 const hasQuantities = computed(() => activeLines.value.length > 0)
 const canSubmit = computed(
@@ -213,8 +233,7 @@ async function onSubmit() {
   submitError.value = null
   try {
     const payload = {
-      periodStart: new Date(`${periodStart.value}T12:00:00`),
-      periodEnd: new Date(`${periodEnd.value}T12:00:00`),
+      periodIndex: selectedPeriodIndex.value!,
       lineItems: activeLines.value.map((li) => ({
         conceptId: li.conceptId,
         inThisEstimate: li.inThisEstimate,
@@ -245,30 +264,17 @@ const sections = [
 <template>
   <UDashboardPanel id="estimate-new">
     <template #header>
-      <UDashboardNavbar
-        :title="isEdit && data ? `${F.editTitlePrefix} No. ${data.estimateNumber}` : F.title"
-      >
+      <UDashboardNavbar :title="isEdit && data ? `${F.editTitlePrefix} No. ${data.estimateNumber}` : F.title">
         <template #leading>
-          <UButton
-            icon="i-lucide-arrow-left"
-            color="neutral"
-            variant="ghost"
-            :to="backTo"
-            :aria-label="S.common.back"
-          />
+          <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" :to="backTo"
+            :aria-label="S.common.back" />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <UAlert
-        v-if="error"
-        color="error"
-        variant="soft"
-        icon="i-lucide-alert-triangle"
-        :title="S.common.error"
-        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
-      />
+      <UAlert v-if="error" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="S.common.error"
+        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]" />
 
       <div v-else-if="status === 'pending'" class="space-y-4">
         <USkeleton class="h-32 w-full rounded-lg" />
@@ -276,27 +282,18 @@ const sections = [
         <USkeleton class="h-48 w-full rounded-lg" />
       </div>
 
-      <div v-else-if="data" class="flex flex-col gap-6">
+      <div v-else-if="data" class="space-y-6">
         <!-- Returned/rejected reason when editing -->
-        <UAlert
-          v-if="editNote"
-          :color="editNote.rejected ? 'error' : 'warning'"
-          variant="soft"
+        <UAlert v-if="editNote" :color="editNote.rejected ? 'error' : 'warning'" variant="soft"
           icon="i-lucide-message-square-warning"
           :title="editNote.rejected ? S.estimateDetail.banner.rejected : S.estimateDetail.banner.withNotes"
-          :description="editNote.note"
-        />
+          :description="editNote.note" />
 
         <!-- Section nav -->
         <nav
-          class="sticky top-0 z-10 -mx-4 mb-2 flex gap-1 border-b border-default bg-default/75 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6"
-        >
-          <a
-            v-for="s in sections"
-            :key="s.id"
-            :href="`#${s.id}`"
-            class="rounded-md px-2.5 py-1 text-sm text-muted transition-colors hover:bg-elevated hover:text-default"
-          >
+          class="sticky top-0 z-10 -mx-4 mb-2 flex gap-1 border-b border-default bg-default/75 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+          <a v-for="s in sections" :key="s.id" :href="`#${s.id}`"
+            class="rounded-md px-2.5 py-1 text-sm text-muted transition-colors hover:bg-elevated hover:text-default">
             {{ s.label }}
           </a>
         </nav>
@@ -334,13 +331,18 @@ const sections = [
               </div>
             </div>
 
-            <UFormField :label="F.cover.periodFrom" :error="periodError && !periodStart ? F.validation.periodRequired : undefined">
-              <UInput v-model="periodStart" type="date" class="w-full [&_input]:text-success [&_input]:font-medium" />
+            <UFormField :label="F.cover.period" :error="periodError || undefined" class="sm:col-span-2">
+              <USelect v-model="selectedPeriodIndex" :items="(data?.availablePeriods ?? []).map(p => ({
+                label: `Período ${p.index}`,
+                value: p.index,
+              }))" :placeholder="F.cover.periodSelector" class="w-full" />
+              <p v-if="selectedPeriodDates" class="mt-1 text-xs text-muted">
+                {{ formatDate(selectedPeriodDates.start) }} – {{ formatDate(selectedPeriodDates.end) }}
+              </p>
+              <p v-else-if="!data?.availablePeriods?.length" class="mt-1 text-xs text-error">
+                {{ F.cover.noPeriods }}
+              </p>
             </UFormField>
-            <UFormField :label="F.cover.periodTo">
-              <UInput v-model="periodEnd" type="date" class="w-full [&_input]:text-success [&_input]:font-medium" />
-            </UFormField>
-            <p class="self-end pb-2 text-xs text-muted">{{ F.cover.periodHint }}</p>
           </div>
         </UCard>
 
@@ -363,12 +365,8 @@ const sections = [
 
           <!-- Search + bulk actions -->
           <div class="mb-3 flex flex-wrap items-center gap-2">
-            <UInput
-              v-model="conceptSearch"
-              :placeholder="S.conceptCatalog.search"
-              icon="i-lucide-search"
-              class="w-56"
-            />
+            <UInput v-model="conceptSearch" :placeholder="S.conceptCatalog.search" icon="i-lucide-search"
+              class="w-56" />
             <UButton size="xs" color="neutral" variant="ghost" @click="addAllConcepts">
               {{ F.conceptPicker.addAll }}
             </UButton>
@@ -386,23 +384,17 @@ const sections = [
               <!-- Section header -->
               <div class="sticky top-0 flex items-center gap-2 border-b border-default bg-elevated px-3 py-1.5">
                 <span class="font-mono text-xs font-semibold text-muted">{{ group.section?.specificationNumber }}</span>
-                <span class="text-xs font-semibold text-default">{{ group.section?.description ?? S.conceptSections.noSection }}</span>
+                <span class="text-xs font-semibold text-default">{{ group.section?.description ??
+                  S.conceptSections.noSection }}</span>
                 <span v-if="group.section" class="ml-auto text-xs text-muted">
                   {{ formatDate(group.section.startDate) }} – {{ formatDate(group.section.endDate) }}
                 </span>
               </div>
               <!-- Concepts in this section -->
-              <div
-                v-for="c in group.concepts"
-                :key="c.id"
+              <div v-for="c in group.concepts" :key="c.id"
                 class="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-elevated/60 transition-colors"
-                :class="selectedConceptIds.includes(c.id) ? 'bg-primary/5' : ''"
-                @click="toggleConcept(c.id)"
-              >
-                <UCheckbox
-                  :model-value="selectedConceptIds.includes(c.id)"
-                  class="shrink-0 pointer-events-none"
-                />
+                :class="selectedConceptIds.includes(c.id) ? 'bg-primary/5' : ''" @click="toggleConcept(c.id)">
+                <UCheckbox :model-value="selectedConceptIds.includes(c.id)" class="shrink-0 pointer-events-none" />
                 <span class="font-mono text-xs text-muted w-16 shrink-0">{{ c.specificationNumber }}</span>
                 <span class="min-w-0 flex-1 text-sm text-highlighted truncate">{{ c.description }}</span>
                 <span class="shrink-0 text-xs text-muted">{{ c.unit }}</span>
@@ -461,55 +453,56 @@ const sections = [
                   <!-- Section header row in grid -->
                   <tr class="bg-elevated border-t-2 border-default">
                     <td colspan="12" class="px-3 py-1.5">
-                      <span class="font-mono text-xs font-semibold text-muted mr-2">{{ group.section?.specificationNumber }}</span>
-                      <span class="text-xs font-semibold text-default">{{ group.section?.description ?? S.conceptSections.noSection }}</span>
+                      <span class="font-mono text-xs font-semibold text-muted mr-2">{{
+                        group.section?.specificationNumber }}</span>
+                      <span class="text-xs font-semibold text-default">{{ group.section?.description ??
+                        S.conceptSections.noSection }}</span>
                       <span v-if="group.section" class="ml-3 text-xs text-muted">
                         {{ formatDate(group.section.startDate) }} – {{ formatDate(group.section.endDate) }}
                       </span>
                     </td>
                   </tr>
                   <!-- Concept rows for this section (from lineItems, filtered by group) -->
-                  <tr
-                    v-for="li in lineItems.filter(li => group.concepts.some(c => c.id === li.conceptId))"
-                    :key="li.conceptId"
-                    class="border-t border-default/50"
-                    :class="overRows.has(li.conceptId) ? 'bg-error/10' : ''"
-                  >
+                  <tr v-for="li in lineItems.filter(li => group.concepts.some(c => c.id === li.conceptId))"
+                    :key="li.conceptId" class="border-t border-default/50"
+                    :class="overRows.has(li.conceptId) ? 'bg-error/10' : ''">
                     <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ li.conceptNumber }}</td>
                     <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ li.specificationNumber }}</td>
                     <td class="min-w-[14rem] px-3 py-2 text-highlighted">{{ li.description }}</td>
                     <td class="px-3 py-2 text-muted">{{ li.unit }}</td>
                     <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatNumber(li.inProject) }}</td>
-                    <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatNumber(li.upToLastEstimate) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatNumber(li.upToLastEstimate)
+                      }}</td>
                     <td class="px-3 py-2">
-                      <UInput
-                        v-model.number="qty[li.conceptId]"
-                        type="number"
-                        min="0"
-                        step="any"
+                      <UInput v-model.number="qty[li.conceptId]" type="number" min="0" step="any"
                         :color="overRows.has(li.conceptId) ? 'error' : undefined"
-                        class="w-32 [&_input]:text-right [&_input]:text-success [&_input]:font-medium"
-                      >
+                        class="w-32 [&_input]:text-right [&_input]:text-success [&_input]:font-medium">
                         <template #trailing>
                           <span class="pr-1 text-xs text-muted">{{ li.unit }}</span>
                         </template>
                       </UInput>
                     </td>
                     <td class="px-3 py-2 text-right tabular-nums text-error">{{ formatNumber(li.totalEstimated) }}</td>
-                    <td class="px-3 py-2 text-right tabular-nums" :class="overRows.has(li.conceptId) ? 'font-semibold text-error' : 'text-error'">
+                    <td class="px-3 py-2 text-right tabular-nums"
+                      :class="overRows.has(li.conceptId) ? 'font-semibold text-error' : 'text-error'">
                       {{ formatNumber(li.toExecute) }}
                     </td>
                     <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatMoney(li.unitPrice) }}</td>
-                    <td class="px-3 py-2 text-right tabular-nums font-medium text-error">{{ formatMoney(li.totalAmount) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums font-medium text-error">{{ formatMoney(li.totalAmount)
+                      }}</td>
                     <td class="px-2 py-2">
-                      <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" :aria-label="`Quitar ${li.specificationNumber}`" @click="toggleConcept(li.conceptId)" />
+                      <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost"
+                        :aria-label="`Quitar ${li.specificationNumber}`" @click="toggleConcept(li.conceptId)" />
                     </td>
                   </tr>
                   <!-- Section subtotal -->
                   <tr class="border-t border-default bg-elevated/30">
-                    <td colspan="10" class="px-3 py-1 text-right text-xs text-muted">{{ S.conceptSections.subtotal }}</td>
+                    <td colspan="10" class="px-3 py-1 text-right text-xs text-muted">{{ S.conceptSections.subtotal }}
+                    </td>
                     <td class="px-3 py-1 text-right tabular-nums text-xs font-semibold text-highlighted">
-                      {{ formatMoney(lineItems.filter(li => group.concepts.some(c => c.id === li.conceptId)).reduce((s, li) => s + li.totalAmount, 0)) }}
+                      {{formatMoney(lineItems.filter(li => group.concepts.some(c => c.id === li.conceptId)).reduce((s,
+                        li) => s +
+                      li.totalAmount, 0)) }}
                     </td>
                     <td />
                   </tr>
@@ -556,7 +549,8 @@ const sections = [
               </tbody>
               <tfoot class="border-t border-default">
                 <tr>
-                  <td colspan="2" class="py-2 pr-3 text-right text-xs font-medium text-muted">{{ F.summary.subtotal }}</td>
+                  <td colspan="2" class="py-2 pr-3 text-right text-xs font-medium text-muted">{{ F.summary.subtotal }}
+                  </td>
                   <td class="py-2 text-right tabular-nums font-semibold text-highlighted">
                     {{ formatMoney(summary.conceptSummary.subtotal) }}
                   </td>
@@ -583,7 +577,8 @@ const sections = [
               </div>
               <div class="flex items-center justify-between py-2">
                 <dt class="font-medium text-default">{{ F.summary.estimateTotal }}</dt>
-                <dd class="tabular-nums font-medium text-highlighted">{{ formatMoney(summary.calculations.estimateTotal) }}</dd>
+                <dd class="tabular-nums font-medium text-highlighted">{{ formatMoney(summary.calculations.estimateTotal)
+                  }}</dd>
               </div>
               <div class="flex items-center justify-between py-2">
                 <dt class="text-muted">{{ F.summary.anticipoAmortization }}</dt>
@@ -603,7 +598,8 @@ const sections = [
               </div>
               <div class="flex items-center justify-between py-2.5">
                 <dt class="font-semibold text-default">{{ F.summary.net }}</dt>
-                <dd class="text-base font-semibold tabular-nums text-primary">{{ formatMoney(summary.calculations.total) }}</dd>
+                <dd class="text-base font-semibold tabular-nums text-primary">{{ formatMoney(summary.calculations.total)
+                  }}</dd>
               </div>
             </dl>
           </UCard>
@@ -626,15 +622,10 @@ const sections = [
               <div class="mb-2 text-sm font-medium text-default">{{ F.attachments.logNotes }}</div>
               <div v-if="!data.logNotes.length" class="text-sm text-muted">{{ F.attachments.logNotesEmpty }}</div>
               <div v-else class="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-default p-2">
-                <UCheckbox
-                  v-for="n in data.logNotes"
-                  :key="n.id"
-                  :model-value="selectedLogNotes.includes(n.id)"
-                  :label="`#${n.folio} · ${n.title}`"
-                  :description="formatDate(n.date)"
+                <UCheckbox v-for="n in data.logNotes" :key="n.id" :model-value="selectedLogNotes.includes(n.id)"
+                  :label="`#${n.folio} · ${n.title}`" :description="formatDate(n.date)"
                   class="rounded-md px-2 py-1.5 hover:bg-elevated"
-                  @update:model-value="() => toggle(selectedLogNotes, n.id)"
-                />
+                  @update:model-value="() => toggle(selectedLogNotes, n.id)" />
               </div>
             </div>
 
@@ -643,31 +634,19 @@ const sections = [
               <div class="mb-2 text-sm font-medium text-default">{{ F.attachments.files }}</div>
               <div v-if="!data.files.length" class="text-sm text-muted">{{ F.attachments.filesEmpty }}</div>
               <div v-else class="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-default p-2">
-                <UCheckbox
-                  v-for="f in data.files"
-                  :key="f.id"
-                  :model-value="selectedFiles.includes(f.id)"
-                  :label="f.name"
-                  class="rounded-md px-2 py-1.5 hover:bg-elevated"
-                  @update:model-value="() => toggle(selectedFiles, f.id)"
-                />
+                <UCheckbox v-for="f in data.files" :key="f.id" :model-value="selectedFiles.includes(f.id)"
+                  :label="f.name" class="rounded-md px-2 py-1.5 hover:bg-elevated"
+                  @update:model-value="() => toggle(selectedFiles, f.id)" />
               </div>
             </div>
           </div>
         </UCard>
 
-        <UAlert
-          v-if="submitError"
-          :title="submitError"
-          color="error"
-          variant="soft"
-          icon="i-lucide-alert-triangle"
-        />
+        <UAlert v-if="submitError" :title="submitError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
 
         <!-- Sticky actions -->
         <div
-          class="sticky bottom-0 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
-        >
+          class="sticky bottom-0 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
           <div class="flex flex-col">
             <span class="text-xs text-muted">{{ F.summary.net }}</span>
             <span class="text-lg font-semibold tabular-nums text-primary">
@@ -682,12 +661,8 @@ const sections = [
             <UButton color="neutral" variant="ghost" :to="backTo">
               {{ S.common.cancel }}
             </UButton>
-            <UButton
-              :icon="isEdit ? 'i-lucide-save' : 'i-lucide-file-spreadsheet'"
-              :loading="loading"
-              :disabled="!canSubmit"
-              @click="onSubmit"
-            >
+            <UButton :icon="isEdit ? 'i-lucide-save' : 'i-lucide-file-spreadsheet'" :loading="loading"
+              :disabled="!canSubmit" @click="onSubmit">
               {{ isEdit ? F.saveChanges : F.saveDraft }}
             </UButton>
           </div>

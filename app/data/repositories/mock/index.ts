@@ -96,6 +96,28 @@ function scheduleSave(db: object): void {
   _saveTimer = setTimeout(() => saveDb(db), 200)
 }
 
+// Helper: compute period array for a contract (same logic as buildPeriods in calc/schedule)
+function buildContractPeriods(contract: Contract): { start: Date; end: Date }[] {
+  const periods: { start: Date; end: Date }[] = []
+  let curStart = new Date(contract.startDate)
+  const contractEnd = new Date(contract.endDate)
+  const periodicity = contract.estimatePeriodicity ?? 'monthly'
+  while (curStart <= contractEnd) {
+    const y = curStart.getFullYear(), m = curStart.getMonth()
+    const lastDay = new Date(y, m + 1, 0)
+    const cutoffs = periodicity === 'monthly'
+      ? [lastDay]
+      : [new Date(y, m, 15), lastDay]
+    const cutoff = cutoffs.find((c) => c >= curStart) ?? cutoffs[cutoffs.length - 1]
+    const periodEnd = cutoff > contractEnd ? new Date(contractEnd) : new Date(cutoff)
+    periods.push({ start: new Date(curStart), end: periodEnd })
+    if (periodEnd >= contractEnd) break
+    curStart = new Date(periodEnd)
+    curStart.setDate(curStart.getDate() + 1)
+  }
+  return periods
+}
+
 export function resetMockDb(): void {
   localStorage.removeItem(STORAGE_KEY)
 }
@@ -275,23 +297,15 @@ export function createMockRepositories(): Repositories {
         db.contracts.push(contract)
         save()
 
-        // Create schedule from the supplied items, resolving conceptIndex → conceptId.
-        const scheduleItems = input.scheduleItems.map((si) => {
-          const concept = createdConcepts[si.conceptIndex]
-          return {
-            id: genId('SI'),
-            contractId,
-            label: concept?.description ?? '',
-            conceptId: concept?.id ?? null,
-            startDate: si.startDate,
-            endDate: si.endDate,
-            programmedPercentage: 0,
-            actualPercentage: null,
-            programmedAmount: concept ? concept.unitPrice * concept.contractedQuantity : 0,
-            actualAmount: null,
-          }
-        })
-        db.schedules.push({ id: genId('SCH'), contractId, items: scheduleItems })
+        // Create period-based schedule entries, resolving conceptIndex → conceptId.
+        const scheduleEntries = (input.scheduleEntries ?? []).map((se) => ({
+          id: genId('SE'),
+          contractId,
+          conceptId: createdConcepts[se.conceptIndex]?.id ?? null,
+          periodIndex: se.periodIndex,
+          plannedQuantity: se.plannedQuantity,
+        }))
+        db.schedules.push({ id: genId('SCH'), contractId, entries: scheduleEntries })
         save()
 
         // Seed the three predefined folders every new contract gets.
@@ -425,8 +439,9 @@ export function createMockRepositories(): Repositories {
         const list = db.estimates.filter((e) => {
           if (e.contractId !== contractId) return false
           if (user.role === 'financial') return e.status === 'approved' || e.status === 'paid'
-          if (user.role !== 'resident') return e.status !== 'draft'
-          return true // resident sees everything including drafts
+          // Drafts are only visible to their creator
+          if (e.status === 'draft') return e.createdById === user.id
+          return true
         })
         return clone(list)
       },
@@ -444,13 +459,27 @@ export function createMockRepositories(): Repositories {
         const catalog = db.concepts.filter((c) => c.contractId === input.contractId)
         const prior = db.estimates.filter((e) => e.contractId === input.contractId)
 
+        // Validate: no other estimate exists for this period
+        const duplicate = prior.find((e) => e.periodIndex === input.periodIndex)
+        if (duplicate) throw new RepositoryError(409, `Ya existe una estimación para el período ${input.periodIndex}`, 'duplicate_period')
+
+        // Derive period dates from the contract periodicity
+        const periods = buildContractPeriods(contract)
+        const periodDates = periods[input.periodIndex - 1] // 1-based → 0-based
+        if (!periodDates) throw new RepositoryError(400, 'Período inválido', 'invalid_period')
+        const periodStart = periodDates.start
+        const periodEnd   = periodDates.end
+
+        // upToLast = quantities from all non-rejected, non-draft estimates EXCEPT the current period
         const lineItems = input.lineItems.map((li, i) => {
           const concept = catalog.find((c) => c.id === li.conceptId)
           if (!concept) throw notFound(`Concepto ${li.conceptId}`)
-          const upToLast = prior.reduce(
-            (s, e) => s + (e.lineItems.find((x) => x.conceptId === li.conceptId)?.inThisEstimate ?? 0),
-            0,
-          )
+          const upToLast = prior
+            .filter((e) => e.status !== 'draft' && e.status !== 'rejected')
+            .reduce(
+              (s, e) => s + (e.lineItems.find((x) => x.conceptId === li.conceptId)?.inThisEstimate ?? 0),
+              0,
+            )
           return buildLineItem(concept, li.inThisEstimate, upToLast, i + 1)
         })
         const summary = buildSummary(lineItems, {
@@ -459,24 +488,26 @@ export function createMockRepositories(): Repositories {
           cincoAlMillarRate: 0.5,
           anticipoPercentage: contract.anticipoPercentage,
         })
-        const number = prior.length + 1
+        const number = input.periodIndex // period number IS the estimate number
         const cover: EstimateCover = {
           contractCode: contract.code,
           contractTitle: contract.title,
           contractorName: corp?.name ?? '',
           contractorCorporationId: contract.contractorCorporationId,
           estimateNumber: number,
-          periodStart: input.periodStart,
-          periodEnd: input.periodEnd,
+          periodIndex: input.periodIndex,
+          periodStart,
+          periodEnd,
         }
         const now = new Date()
         const estimate: Estimate = {
           id: genId('ES'),
           contractId: input.contractId,
           number,
+          periodIndex: input.periodIndex,
           status: 'draft',
-          periodStart: input.periodStart,
-          periodEnd: input.periodEnd,
+          periodStart,
+          periodEnd,
           cover,
           lineItems,
           summary,
@@ -519,8 +550,7 @@ export function createMockRepositories(): Repositories {
           cincoAlMillarRate: 0.5,
           anticipoPercentage: contract.anticipoPercentage,
         })
-        e.periodStart = input.periodStart
-        e.periodEnd = input.periodEnd
+        // periodIndex handled via re-create; dates derived from periodIndex
         if (input.evidenceFileIds) e.evidenceFileIds = input.evidenceFileIds
         if (input.linkedLogNoteIds) e.linkedLogNoteIds = input.linkedLogNoteIds
         // Editing a returned/rejected estimate sends it back to draft (loop closed).
@@ -568,6 +598,20 @@ export function createMockRepositories(): Repositories {
         // Auto-approve once every signing slot is filled.
         const allSigned = e.signatures.every((s) => s.status === 'signed')
         if (allSigned) {
+          // Sequential approval: all prior period estimates must be approved or paid
+          const priorEstimates = db.estimates.filter(
+            (x) => x.contractId === e.contractId && x.periodIndex < e.periodIndex,
+          )
+          const blocked = priorEstimates.find(
+            (x) => x.status !== 'approved' && x.status !== 'paid',
+          )
+          if (blocked) {
+            throw new RepositoryError(
+              409,
+              `La estimación del período ${blocked.periodIndex} debe aprobarse antes que ésta`,
+              'sequential_approval',
+            )
+          }
           e.status = 'approved'
           e.history.push(event('approved'))
         }

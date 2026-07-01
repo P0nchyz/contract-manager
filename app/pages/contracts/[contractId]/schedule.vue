@@ -4,9 +4,10 @@ import { S } from '~/constants/strings'
 import {
   buildScheduleCurve,
   computeConceptStatuses,
-  periodEnds,
-  formatPeriodLabel,
-  type ConceptProgress,
+  buildPeriods,
+  currentPeriodIndex as getCurrentPeriodIdx,
+  type ConceptMeta,
+  type PeriodProgress,
   type ConceptGanttStatus,
 } from '~/data/calc/schedule'
 import type { GanttEntry } from '~/components/ScheduleGantt.client.vue'
@@ -29,74 +30,56 @@ const { data, status, error, refresh } = await useAsyncData(
       repos.concepts.listByContract(contractId.value),
     ])
 
-    // Roll up physical and financial progress per concept from estimates.
-    // Physical  = approved + paid (work is done)
-    // Financial = paid only (money disbursed)
-    const physQty: Record<string, number>  = {}
-    const finQty:  Record<string, number>  = {}
+    const periodicity = contract.estimatePeriodicity ?? 'monthly'
+    const periods = buildPeriods(new Date(contract.startDate), new Date(contract.endDate), periodicity)
+    const curIdx  = getCurrentPeriodIdx(periods)
 
+    // Roll up physical (approved+paid) and financial (paid) per concept per period
+    const progress: PeriodProgress[] = []
     for (const est of estimates) {
       const isPhysical  = est.status === 'approved' || est.status === 'paid'
       const isFinancial = est.status === 'paid'
+      if (!isPhysical) continue
       for (const li of est.lineItems) {
-        if (isPhysical)  physQty[li.conceptId]  = (physQty[li.conceptId]  ?? 0) + li.inThisEstimate
-        if (isFinancial) finQty[li.conceptId]   = (finQty[li.conceptId]   ?? 0) + li.inThisEstimate
+        progress.push({
+          conceptId:    String(li.conceptId),
+          periodIndex:  est.periodIndex - 1, // 1-based → 0-based
+          physicalQty:  li.inThisEstimate,
+          financialQty: isFinancial ? li.inThisEstimate : 0,
+        })
       }
     }
 
-    const conceptMap: Record<string, { contractedQuantity: number }> = {}
-    for (const c of concepts) conceptMap[c.id] = { contractedQuantity: c.contractedQuantity }
-
-    const conceptProgress: ConceptProgress[] = schedule.items
-      .filter((i) => i.conceptId)
-      .map((i) => {
-        const cid = i.conceptId!
-        const contracted = conceptMap[cid]?.contractedQuantity ?? 0
-        const phys = contracted > 0 ? Math.min((physQty[cid] ?? 0) / contracted * 100, 100) : 0
-        const fin  = contracted > 0 ? Math.min((finQty[cid]  ?? 0) / contracted * 100, 100) : 0
-        return { conceptId: cid, physicalProgress: phys, financialProgress: fin }
-      })
-
-    const periodicity = contract.estimatePeriodicity ?? 'monthly'
-
-    const curve     = buildScheduleCurve(schedule.items, periodicity, conceptProgress)
-    const statuses  = computeConceptStatuses(schedule.items, conceptProgress, periodicity)
-    const statusMap = Object.fromEntries(statuses.map((s) => [s.conceptId, s]))
-
-    // Build Gantt entries
-    const ganttEntries: GanttEntry[] = schedule.items.map((item) => ({
-      conceptId: item.conceptId ?? '',
-      label:     item.label,
-      startDate: new Date(item.startDate),
-      endDate:   new Date(item.endDate),
-      programmedAmount: item.programmedAmount,
-      status: statusMap[item.conceptId ?? ''] ?? {
-        conceptId: item.conceptId ?? '',
-        status: 'future' as const,
-        plannedProgress: 0,
-        actualProgress: 0,
-        delta: 0,
-      },
+    const conceptMetas: ConceptMeta[] = concepts.map((c) => ({
+      conceptId:           String(c.id),
+      contractedQuantity:  c.contractedQuantity,
+      unitPrice:           c.unitPrice,
     }))
 
-    // Period table data: planned vs actual per period
-    const today = new Date()
-    const schedStart = new Date(Math.min(...schedule.items.map((i) => +new Date(i.startDate))))
-    const schedEnd   = new Date(Math.max(...schedule.items.map((i) => +new Date(i.endDate))))
-    const periods = periodEnds(schedStart, schedEnd, periodicity)
+    const curve    = buildScheduleCurve(periods, schedule.entries, conceptMetas, progress, curIdx)
+    const statuses = computeConceptStatuses(schedule.entries, conceptMetas, progress, curIdx)
+    const statusMap = Object.fromEntries(statuses.map((s) => [s.conceptId, s]))
 
-    return {
-      contract,
-      schedule,
-      curve,
-      ganttEntries,
-      statuses,
-      conceptProgress,
-      periodicity,
-      periods,
-      schedStart,
-      schedEnd,
-    }
+    // Build Gantt entries: first to last active period per concept
+    const ganttEntries: GanttEntry[] = concepts.map((c) => {
+      const cid = String(c.id)
+      const cEntries = schedule.entries.filter((e) => String(e.conceptId) === cid && e.plannedQuantity > 0)
+      const first = cEntries.length > 0 ? Math.min(...cEntries.map((e) => e.periodIndex)) : -1
+      const last  = cEntries.length > 0 ? Math.max(...cEntries.map((e) => e.periodIndex)) : -1
+      return {
+        conceptId: cid,
+        label:     c.description,
+        startDate: first >= 0 ? new Date(periods[first].start) : new Date(contract.startDate),
+        endDate:   last  >= 0 ? new Date(periods[last].end)    : new Date(contract.endDate),
+        programmedAmount: c.unitPrice * c.contractedQuantity,
+        status: statusMap[cid] ?? {
+          conceptId: cid, status: 'future' as const,
+          plannedProgress: 0, actualProgress: 0, delta: 0, activePeriods: [],
+        },
+      }
+    })
+
+    return { contract, schedule, curve, ganttEntries, statuses, conceptMetas, progress, periodicity, periods, curIdx }
   },
 )
 
@@ -164,7 +147,7 @@ const ganttHeight = computed(() =>
         <USkeleton class="h-48 w-full rounded-lg" />
       </div>
 
-      <div v-else-if="data" class="flex flex-col gap-6">
+      <div v-else-if="data" class="space-y-6">
         <!-- ① Progress summary cards -->
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <UCard>

@@ -12,7 +12,7 @@ const props = withDefaults(defineProps<{ points: SchedulePoint[]; height?: numbe
 const colors = useChartColors()
 
 const chartData = computed<ChartData<'line'>>(() => ({
-  labels: props.points.map((p) => formatMonth(p.date)),
+  labels: props.points.map((p) => `P${p.periodIndex + 1}`),
   datasets: [
     {
       label: S.contractDashboard.programmed,

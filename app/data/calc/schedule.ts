@@ -1,257 +1,247 @@
 // app/data/calc/schedule.ts
 /**
- * Schedule math — S-curve and per-concept Gantt status.
+ * Period-based schedule math — S-curve and Gantt status.
  *
- * S-CURVE FORMULA (per the domain spec):
- *   1. Weighted average per concept = conceptAmount / contractAmount
- *   2. Partial advance for a period = weightedAvg × fractionCompletedInPeriod
- *   3. Cumulative advance = sum of all partial advances up to and including this period
+ * S-CURVE FORMULA:
+ *   weight(concept) = (unitPrice × contractedQuantity) / totalContractAmount
+ *   partialAdvance(period) = Σ weight(c) × (actualQtyInPeriod(c) / contractedQty(c))
+ *   cumulativeAdvance(n) = partialAdvance(n) + cumulativeAdvance(n-1)
  *
  * Two actual series:
- *   - Physical  (approved + paid estimates): work is physically done
- *   - Financial (paid estimates only):       money has been disbursed
- *
- * GANTT STATUS per concept per period (compared at period boundary):
- *   done        — actualProgress === 1.0
- *   ahead       — actualProgress > plannedProgress at period end
- *   behind      — actualProgress < plannedProgress at period end
- *   on_track    — actualProgress === plannedProgress (within tolerance)
- *   not_started — concept hasn't started yet in this period
- *   overdue     — period has passed, concept end date passed, progress < 1.0
+ *   Physical  — approved + paid estimates
+ *   Financial — paid estimates only
  */
-import type { Money, Percentage, ScheduleItem, SchedulePoint } from '../models'
+import type { ConceptScheduleEntry, SchedulePoint } from '../models'
 
-const round = (n: number) => Math.round(n)
-const round1 = (n: number) => Math.round(n * 10) / 10
-const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
-
-// ---------------------------------------------------------------------------
-// Period helpers
-// ---------------------------------------------------------------------------
-
-/** All period-end dates spanning start→end with the given periodicity. */
-export function periodEnds(
-  start: Date,
-  end: Date,
-  periodicity: 'monthly' | 'biweekly',
-): Date[] {
-  const result: Date[] = []
-  let cur = new Date(start)
-  cur.setDate(1) // snap to month start for consistent boundaries
-
-  const endMs = end.getTime()
-
-  while (cur.getTime() <= endMs) {
-    if (periodicity === 'monthly') {
-      // last day of current month
-      const periodEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0)
-      result.push(periodEnd)
-      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
-    } else {
-      // biweekly: 15th and last day of each month
-      const mid = new Date(cur.getFullYear(), cur.getMonth(), 15)
-      const last = new Date(cur.getFullYear(), cur.getMonth() + 1, 0)
-      result.push(mid, last)
-      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
-    }
-  }
-
-  // Always include the contract end date as the final point if not already
-  if (result.length === 0 || result[result.length - 1].getTime() < endMs) {
-    result.push(new Date(end))
-  }
-
-  return result
-}
-
-/** Label for a period boundary. */
-export function formatPeriodLabel(
-  date: Date,
-  periodicity: 'monthly' | 'biweekly',
-): string {
-  const d = date.getDate()
-  const month = date.toLocaleDateString('es-MX', { month: 'short' })
-  const year = String(date.getFullYear()).slice(-2)
-  if (periodicity === 'monthly') return `${month} ${year}`
-  return `${d === 15 ? '1a' : '2a'} ${month} ${year}`
-}
-
-/** Fraction of [start, end] elapsed at `at`. Clamps to [0, 1]. */
-function fraction(start: Date, end: Date, at: Date): number {
-  const s = +start, e = +end, a = +at
-  if (e <= s) return 0
-  return clamp((a - s) / (e - s), 0, 1)
-}
-
-// ---------------------------------------------------------------------------
-// Concept progress inputs (supplied by the caller from estimate rollup)
-// ---------------------------------------------------------------------------
-
-export interface ConceptProgress {
-  conceptId: string
-  physicalProgress: Percentage  // 0-100 from approved+paid estimates
-  financialProgress: Percentage // 0-100 from paid estimates only
-}
-
-// ---------------------------------------------------------------------------
-// S-curve
-// ---------------------------------------------------------------------------
+// ─── Period helpers ──────────────────────────────────────────────────────────
 
 /**
- * Builds cumulative S-curve points.
- *
- * `conceptProgress` maps conceptId → { physicalProgress, financialProgress }.
- * Items without a matching entry are treated as 0% complete.
+ * All period cutoff dates for a contract, 0-based.
+ * Period 0: contractStart → first cutoff
+ * Period N: previous cutoff + 1 day → next cutoff
+ * Last period: last cutoff + 1 day → contractEnd
+ */
+export function buildPeriods(
+  contractStart: Date,
+  contractEnd: Date,
+  periodicity: 'monthly' | 'biweekly',
+): { start: Date; end: Date }[] {
+  const periods: { start: Date; end: Date }[] = []
+  let curStart = new Date(contractStart)
+
+  while (curStart <= contractEnd) {
+    const cutoffs = nextCutoffs(curStart, periodicity)
+    let cutoff = cutoffs.find((c) => c > curStart) ?? cutoffs[cutoffs.length - 1]
+    // If the cutoff is past contract end, the last period ends at contractEnd
+    const periodEnd = cutoff > contractEnd ? new Date(contractEnd) : new Date(cutoff)
+    periods.push({ start: new Date(curStart), end: periodEnd })
+    if (periodEnd >= contractEnd) break
+    // next period starts the day after this cutoff
+    curStart = new Date(periodEnd)
+    curStart.setDate(curStart.getDate() + 1)
+  }
+  return periods
+}
+
+/** Returns the cutoff dates (15th and/or last day) for the month containing `d`. */
+function nextCutoffs(d: Date, periodicity: 'monthly' | 'biweekly'): Date[] {
+  const y = d.getFullYear()
+  const m = d.getMonth()
+  const lastDay = new Date(y, m + 1, 0)
+  if (periodicity === 'monthly') return [lastDay]
+  const mid = new Date(y, m, 15)
+  return [mid, lastDay]
+}
+
+/** Human-readable label for a period. */
+export function periodLabel(
+  period: { start: Date; end: Date },
+  index: number,
+): string {
+  const fmt = (d: Date) =>
+    d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' })
+  return `P${index + 1}  ${fmt(period.start)} – ${fmt(period.end)}`
+}
+
+// ─── S-curve ─────────────────────────────────────────────────────────────────
+
+export interface ConceptMeta {
+  conceptId: string
+  contractedQuantity: number
+  unitPrice: number // Money (cents)
+}
+
+export interface PeriodProgress {
+  conceptId: string
+  periodIndex: number  // 0-based
+  physicalQty: number  // from approved+paid estimates
+  financialQty: number // from paid estimates only
+}
+
+/**
+ * Builds the cumulative S-curve for every period.
+ * Periods in the future (index > currentPeriodIndex) get null for actual series.
  */
 export function buildScheduleCurve(
-  items: ScheduleItem[],
-  periodicity: 'monthly' | 'biweekly' = 'monthly',
-  conceptProgress: ConceptProgress[] = [],
-  today: Date = new Date(),
+  periods: { start: Date; end: Date }[],
+  entries: ConceptScheduleEntry[],
+  concepts: ConceptMeta[],
+  progress: PeriodProgress[],
+  currentPeriodIndex: number,
 ): SchedulePoint[] {
-  if (items.length === 0) return []
+  const totalAmount = concepts.reduce(
+    (s, c) => s + c.unitPrice * c.contractedQuantity,
+    0,
+  )
+  if (totalAmount === 0 || periods.length === 0) return []
 
-  const start = new Date(Math.min(...items.map((i) => +i.startDate)))
-  const end   = new Date(Math.max(...items.map((i) => +i.endDate)))
-
-  const totalAmount: Money = items.reduce((s, i) => s + i.programmedAmount, 0)
-  if (totalAmount === 0) return []
-
-  // Build progress lookup
-  const physProg: Record<string, number> = {}
-  const finProg:  Record<string, number> = {}
-  for (const cp of conceptProgress) {
-    physProg[cp.conceptId] = cp.physicalProgress / 100
-    finProg[cp.conceptId]  = cp.financialProgress / 100
+  // Weight per concept
+  const weight: Record<string, number> = {}
+  for (const c of concepts) {
+    weight[c.conceptId] = (c.unitPrice * c.contractedQuantity) / totalAmount
   }
 
-  const periods = periodEnds(start, end, periodicity)
+  // Planned quantity per concept per period (from schedule entries)
+  const planned: Record<string, Record<number, number>> = {}
+  for (const e of entries) {
+    const cid = String(e.conceptId)
+    if (!planned[cid]) planned[cid] = {}
+    planned[cid][e.periodIndex] = (planned[cid][e.periodIndex] ?? 0) + e.plannedQuantity
+  }
+
+  // Actual progress indexed by [conceptId][periodIndex]
+  const physQty: Record<string, Record<number, number>> = {}
+  const finQty:  Record<string, Record<number, number>> = {}
+  for (const p of progress) {
+    const cid = p.conceptId
+    if (!physQty[cid]) physQty[cid] = {}
+    if (!finQty[cid])  finQty[cid]  = {}
+    physQty[cid][p.periodIndex] = (physQty[cid][p.periodIndex] ?? 0) + p.physicalQty
+    finQty[cid][p.periodIndex]  = (finQty[cid][p.periodIndex]  ?? 0) + p.financialQty
+  }
 
   let cumPlanned    = 0
   let cumPhysical   = 0
   let cumFinancial  = 0
+  const round1 = (n: number) => Math.round(n * 10) / 10
 
-  // Previous period end for partial-period fractional calculation
-  let prevDate = new Date(start.getTime() - 1)
-
-  // Find the last period boundary that has passed — actual values stop here.
-  const lastPassedPeriodIdx = periods.reduce((last, p, i) => (p <= today ? i : last), -1)
-
-  return periods.map((periodEnd, periodIdx): SchedulePoint => {
-    // Planned: linear ramp of each item's weight earned during this period window.
+  return periods.map((period, idx): SchedulePoint => {
+    // Planned partial advance this period
     let partialPlanned = 0
-    let partialPhysical = 0
-    let partialFinancial = 0
-
-    for (const item of items) {
-      const weight = item.programmedAmount / totalAmount
-
-      // Planned always accumulates across all periods.
-      const fEnd  = fraction(item.startDate, item.endDate, periodEnd)
-      const fPrev = fraction(item.startDate, item.endDate, prevDate)
-      const plannedGain = (fEnd - fPrev) * weight
-      partialPlanned += plannedGain
-
-      // Physical and financial only accumulate up to and including the last passed period.
-      // This prevents progress from being distributed into future periods.
-      if (periodIdx <= lastPassedPeriodIdx) {
-        const physFrac = physProg[item.conceptId] ?? 0
-        const finFrac  = finProg[item.conceptId]  ?? 0
-        partialPhysical  += physFrac * plannedGain
-        partialFinancial += finFrac  * plannedGain
+    for (const c of concepts) {
+      const cid = String(c.conceptId)
+      const q = planned[cid]?.[idx] ?? 0
+      if (c.contractedQuantity > 0) {
+        partialPlanned += weight[cid] * (q / c.contractedQuantity)
       }
     }
+    cumPlanned += partialPlanned
 
-    cumPlanned   += partialPlanned
-    cumPhysical  += partialPhysical
-    cumFinancial += partialFinancial
+    const isPast = idx <= currentPeriodIndex
 
-    prevDate = new Date(periodEnd)
-
-    const periodHasPassed = periodIdx <= lastPassedPeriodIdx
+    let partialPhysical  = 0
+    let partialFinancial = 0
+    if (isPast) {
+      for (const c of concepts) {
+        const cid = String(c.conceptId)
+        if (c.contractedQuantity > 0) {
+          partialPhysical  += weight[cid] * ((physQty[cid]?.[idx] ?? 0) / c.contractedQuantity)
+          partialFinancial += weight[cid] * ((finQty[cid]?.[idx]  ?? 0) / c.contractedQuantity)
+        }
+      }
+      cumPhysical  += partialPhysical
+      cumFinancial += partialFinancial
+    }
 
     return {
-      date: periodEnd,
-      programmedCumulativePercentage:  round1(clamp(cumPlanned,   0, 1) * 100),
-      programmedCumulativeAmount:      round(clamp(cumPlanned,     0, 1) * totalAmount),
-      actualCumulativePercentage:      periodHasPassed ? round1(clamp(cumPhysical,  0, 1) * 100) : null,
-      actualCumulativeAmount:          periodHasPassed ? round(clamp(cumPhysical,    0, 1) * totalAmount) : null,
-      financialCumulativePercentage:   periodHasPassed ? round1(clamp(cumFinancial, 0, 1) * 100) : null,
-      financialCumulativeAmount:       periodHasPassed ? round(clamp(cumFinancial,   0, 1) * totalAmount) : null,
+      periodIndex: idx,
+      date: new Date(period.end),
+      programmedCumulativePercentage: round1(Math.min(cumPlanned,  1) * 100),
+      programmedCumulativeAmount:     Math.round(Math.min(cumPlanned, 1) * totalAmount),
+      actualCumulativePercentage:     isPast ? round1(Math.min(cumPhysical,  1) * 100) : null,
+      actualCumulativeAmount:         isPast ? Math.round(Math.min(cumPhysical, 1) * totalAmount) : null,
+      financialCumulativePercentage:  isPast ? round1(Math.min(cumFinancial, 1) * 100) : null,
+      financialCumulativeAmount:      isPast ? Math.round(Math.min(cumFinancial, 1) * totalAmount) : null,
     }
   })
 }
 
-// ---------------------------------------------------------------------------
-// Per-concept Gantt status
-// ---------------------------------------------------------------------------
+// ─── Gantt status ────────────────────────────────────────────────────────────
 
-export type ConceptStatus = 'done' | 'ahead' | 'on_track' | 'behind' | 'overdue' | 'not_started' | 'future'
+export type ConceptStatus = 'done' | 'ahead' | 'on_track' | 'behind' | 'future'
 
 export interface ConceptGanttStatus {
   conceptId: string
   status: ConceptStatus
-  /** Planned progress at end of current/last period (0-100) */
-  plannedProgress: Percentage
-  /** Actual physical progress (0-100) */
-  actualProgress: Percentage
-  /** Delta: actualProgress - plannedProgress. Positive = ahead, negative = behind. */
-  delta: number
+  plannedProgress: number  // 0-100 cumulative planned %
+  actualProgress: number   // 0-100 cumulative actual %
+  delta: number            // actual - planned
+  /** Periods in which this concept has planned work (0-based indices). */
+  activePeriods: number[]
 }
 
-/**
- * Computes per-concept status for the Gantt view.
- * `today` defaults to the current date.
- */
 export function computeConceptStatuses(
-  items: ScheduleItem[],
-  conceptProgress: ConceptProgress[],
-  periodicity: 'monthly' | 'biweekly' = 'monthly',
-  today: Date = new Date(),
+  entries: ConceptScheduleEntry[],
+  concepts: ConceptMeta[],
+  progress: PeriodProgress[],
+  currentPeriodIndex: number,
 ): ConceptGanttStatus[] {
-  const physProg: Record<string, number> = {}
-  for (const cp of conceptProgress) {
-    physProg[cp.conceptId] = cp.physicalProgress
+  const TOLERANCE = 0.5
+
+  // Cumulative planned and actual per concept up to currentPeriodIndex
+  const plannedCum: Record<string, number> = {}
+  const physCum:    Record<string, number> = {}
+  const activePeriods: Record<string, number[]> = {}
+
+  for (const e of entries) {
+    const cid = String(e.conceptId)
+    if (!activePeriods[cid]) activePeriods[cid] = []
+    if (e.plannedQuantity > 0) activePeriods[cid].push(e.periodIndex)
+    if (e.periodIndex <= currentPeriodIndex) {
+      plannedCum[cid] = (plannedCum[cid] ?? 0) + e.plannedQuantity
+    }
   }
 
-  // Find the most recently completed period boundary at or before today
-  if (items.length === 0) return []
-  const schedStart = new Date(Math.min(...items.map((i) => +i.startDate)))
-  const schedEnd   = new Date(Math.max(...items.map((i) => +i.endDate)))
-  const periods = periodEnds(schedStart, schedEnd, periodicity)
+  for (const p of progress) {
+    if (p.periodIndex <= currentPeriodIndex) {
+      physCum[p.conceptId] = (physCum[p.conceptId] ?? 0) + p.physicalQty
+    }
+  }
 
-  // The reference period: last period boundary that has passed
-  const passedPeriods = periods.filter((p) => p <= today)
-  const refDate = passedPeriods.length > 0 ? passedPeriods[passedPeriods.length - 1] : null
+  return concepts.map((c): ConceptGanttStatus => {
+    const cid = String(c.conceptId)
+    const cq  = c.contractedQuantity
 
-  return items.map((item): ConceptGanttStatus => {
-    const actualProgress = physProg[item.conceptId ?? ''] ?? 0
-    const cid = item.conceptId ?? ''
+    const plannedPct = cq > 0 ? Math.min((plannedCum[cid] ?? 0) / cq * 100, 100) : 0
+    const actualPct  = cq > 0 ? Math.min((physCum[cid]    ?? 0) / cq * 100, 100) : 0
+    const delta      = Math.round((actualPct - plannedPct) * 10) / 10
 
-    if (actualProgress >= 100) {
-      return { conceptId: cid, status: 'done', plannedProgress: 100, actualProgress: 100, delta: 0 }
+    const periods = (activePeriods[cid] ?? []).sort((a, b) => a - b)
+
+    let status: ConceptStatus
+    if (actualPct >= 100 - TOLERANCE) {
+      status = 'done'
+    } else if (periods.length === 0 || periods[0] > currentPeriodIndex) {
+      status = 'future'
+    } else if (delta >= TOLERANCE) {
+      status = 'ahead'
+    } else if (delta <= -TOLERANCE) {
+      status = 'behind'
+    } else {
+      status = 'on_track'
     }
 
-    if (!refDate || today < item.startDate) {
-      return { conceptId: cid, status: 'future', plannedProgress: 0, actualProgress, delta: 0 }
-    }
-
-    // Planned progress at the reference period boundary
-    const f = fraction(item.startDate, item.endDate, refDate) * 100
-    const plannedProgress = round1(f)
-
-    if (today > item.endDate && actualProgress < 100) {
-      return { conceptId: cid, status: 'overdue', plannedProgress: 100, actualProgress, delta: actualProgress - 100 }
-    }
-
-    const delta = round1(actualProgress - plannedProgress)
-    const TOLERANCE = 0.5 // percent
-
-    const status: ConceptStatus =
-      delta >= TOLERANCE  ? 'ahead' :
-      delta <= -TOLERANCE ? 'behind' :
-      'on_track'
-
-    return { conceptId: cid, status, plannedProgress, actualProgress, delta }
+    return { conceptId: cid, status, plannedProgress: plannedPct, actualProgress: actualPct, delta, activePeriods: periods }
   })
+}
+
+/** Current period index (0-based) given contract start and today. */
+export function currentPeriodIndex(
+  periods: { start: Date; end: Date }[],
+  today: Date = new Date(),
+): number {
+  for (let i = 0; i < periods.length; i++) {
+    if (today <= periods[i].end) return i
+  }
+  return periods.length - 1
 }

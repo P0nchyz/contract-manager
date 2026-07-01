@@ -45,15 +45,26 @@ const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse
     <template #header>
       <UDashboardNavbar :title="CI.title">
         <template #leading>
-          <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" :to="`/contracts/${contractId}`"
-            :aria-label="S.common.back" />
+          <UButton
+            icon="i-lucide-arrow-left"
+            color="neutral"
+            variant="ghost"
+            :to="`/contracts/${contractId}`"
+            :aria-label="S.common.back"
+          />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <UAlert v-if="error" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="S.common.error"
-        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]" />
+      <UAlert
+        v-if="error"
+        color="error"
+        variant="soft"
+        icon="i-lucide-alert-triangle"
+        :title="S.common.error"
+        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
+      />
 
       <div v-else-if="status === 'pending'" class="space-y-4">
         <USkeleton class="h-40 w-full rounded-lg" />
@@ -61,7 +72,7 @@ const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse
         <USkeleton class="h-32 w-full rounded-lg" />
       </div>
 
-      <div v-else-if="data" class="flex flex-col gap-6">
+      <div v-else-if="data" class="space-y-6">
         <!-- General data -->
         <UCard>
           <template #header>
@@ -145,8 +156,14 @@ const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse
                 <UIcon name="i-lucide-file-plus-2" class="size-4 text-muted" />
                 {{ CI.sections.agreements }}
               </div>
-              <UButton v-if="canCreateAgreement" icon="i-lucide-plus" size="sm" color="neutral" variant="outline"
-                :to="`/contracts/${contractId}/agreements/new`">
+              <UButton
+                v-if="canCreateAgreement"
+                icon="i-lucide-plus"
+                size="sm"
+                color="neutral"
+                variant="outline"
+                :to="`/contracts/${contractId}/agreements/new`"
+              >
                 {{ CI.agreements.new }}
               </UButton>
             </div>
@@ -156,26 +173,45 @@ const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse
             {{ CI.agreements.empty }}
           </div>
           <ul v-else class="divide-y divide-default">
-            <li v-for="ag in recentAgreements" :key="ag.id" class="flex items-center justify-between gap-3 py-3">
+            <li
+              v-for="ag in recentAgreements"
+              :key="ag.id"
+              class="flex items-center justify-between gap-3 py-3"
+            >
               <div class="min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="text-xs font-medium text-muted">
                     {{ CI.agreements.number }}{{ ag.number }}
                   </span>
-                  <UBadge :label="CI.agreements.kindLabel[ag.kind]" color="neutral" variant="soft" size="xs" />
+                  <UBadge
+                    :label="CI.agreements.kindLabel[ag.kind]"
+                    color="neutral"
+                    variant="soft"
+                    size="xs"
+                  />
                 </div>
                 <p class="truncate text-sm text-highlighted">{{ ag.description }}</p>
                 <p class="text-xs text-muted">{{ formatDate(ag.updatedAt) }}</p>
               </div>
               <div class="flex shrink-0 items-center gap-2">
                 <StatusBadge :display="agreementStatusDisplay[ag.status]" />
-                <UButton icon="i-lucide-chevron-right" color="neutral" variant="ghost" size="xs"
-                  :to="`/contracts/${contractId}/agreements/${ag.id}`" />
+                <UButton
+                  icon="i-lucide-chevron-right"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  :to="`/contracts/${contractId}/agreements/${ag.id}`"
+                />
               </div>
             </li>
           </ul>
           <div v-if="data.agreements.length > 3" class="mt-2 text-right">
-            <UButton color="neutral" variant="ghost" size="xs" :to="`/contracts/${contractId}/agreements`">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              :to="`/contracts/${contractId}/agreements`"
+            >
               {{ S.contractDashboard.viewAll }}
             </UButton>
           </div>
@@ -195,7 +231,10 @@ const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse
             <div class="rounded-lg border border-default p-4">
               <div class="mb-3 flex items-center justify-between gap-2">
                 <span class="font-medium text-highlighted">{{ CI.closing.reception }}</span>
-                <StatusBadge v-if="data.reception" :display="agreementStatusDisplay[data.reception.status]" />
+                <StatusBadge
+                  v-if="data.reception"
+                  :display="agreementStatusDisplay[data.reception.status]"
+                />
                 <span v-else class="text-xs text-muted">{{ CI.closing.notStarted }}</span>
               </div>
               <div v-if="data.reception">
@@ -203,13 +242,23 @@ const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse
                   {{ formatDate(data.reception.createdAt) }}
                 </p>
                 <SignatureChips :signatures="data.reception.signatures" />
-                <UButton class="mt-3" size="sm" color="neutral" variant="outline" icon="i-lucide-arrow-right"
-                  :to="`/contracts/${contractId}/reception`">
+                <UButton
+                  class="mt-3"
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-arrow-right"
+                  :to="`/contracts/${contractId}/reception`"
+                >
                   {{ CI.closing.view }}
                 </UButton>
               </div>
-              <UButton v-else-if="canInitiateReception" size="sm" icon="i-lucide-play"
-                :to="`/contracts/${contractId}/reception`">
+              <UButton
+                v-else-if="canInitiateReception"
+                size="sm"
+                icon="i-lucide-play"
+                :to="`/contracts/${contractId}/reception`"
+              >
                 {{ CI.closing.initiate }}
               </UButton>
             </div>
@@ -218,7 +267,10 @@ const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse
             <div class="rounded-lg border border-default p-4">
               <div class="mb-3 flex items-center justify-between gap-2">
                 <span class="font-medium text-highlighted">{{ CI.closing.finiquito }}</span>
-                <StatusBadge v-if="data.finiquito" :display="agreementStatusDisplay[data.finiquito.status]" />
+                <StatusBadge
+                  v-if="data.finiquito"
+                  :display="agreementStatusDisplay[data.finiquito.status]"
+                />
                 <span v-else class="text-xs text-muted">{{ CI.closing.notStarted }}</span>
               </div>
               <div v-if="data.finiquito">
@@ -226,16 +278,30 @@ const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse
                   {{ formatDate(data.finiquito.createdAt) }}
                 </p>
                 <SignatureChips :signatures="data.finiquito.signatures" />
-                <UButton class="mt-3" size="sm" color="neutral" variant="outline" icon="i-lucide-arrow-right"
-                  :to="`/contracts/${contractId}/finiquito`">
+                <UButton
+                  class="mt-3"
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-arrow-right"
+                  :to="`/contracts/${contractId}/finiquito`"
+                >
                   {{ CI.closing.view }}
                 </UButton>
               </div>
               <template v-else-if="canInitiateReception">
-                <p v-if="data.reception?.status !== 'approved'" class="text-xs text-muted">
+                <p
+                  v-if="data.reception?.status !== 'approved'"
+                  class="text-xs text-muted"
+                >
                   {{ CI.closing.finiquitoBlocked }}
                 </p>
-                <UButton v-else size="sm" icon="i-lucide-play" :to="`/contracts/${contractId}/finiquito`">
+                <UButton
+                  v-else
+                  size="sm"
+                  icon="i-lucide-play"
+                  :to="`/contracts/${contractId}/finiquito`"
+                >
                   {{ CI.closing.initiate }}
                 </UButton>
               </template>
