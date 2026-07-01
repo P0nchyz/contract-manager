@@ -83,7 +83,17 @@ function loadDb<T extends object>(fallback: T): T {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return fallback
-    return JSON.parse(raw, reviver) as T
+    const parsed = JSON.parse(raw, reviver) as Record<string, unknown>
+    // Migrate old schedule shape: items → entries
+    if (Array.isArray(parsed.schedules)) {
+      for (const s of parsed.schedules as Record<string, unknown>[]) {
+        if (s.items && !s.entries) {
+          s.entries = s.items
+          delete s.items
+        }
+      }
+    }
+    return parsed as T
   } catch {
     return fallback
   }
@@ -127,7 +137,7 @@ export function createMockRepositories(): Repositories {
   const seedDb = {
     corporations: clone(seed.corporations),
     users: clone(seed.users),
-    passwords: { 'U-ADMIN': 'admin', 'U-RES': 'resident', 'U-SUP': 'super', 'U-SVR': 'supervisor', 'U-FIN': 'financial' } as Record<string, string>,
+    passwords: { 'U-ADMIN': 'admin', 'U-ENT': 'entidad', 'U-RES': 'resident', 'U-SUP': 'super', 'U-SVR': 'supervisor', 'U-FIN': 'financial' } as Record<string, string>,
     contracts: clone(seed.contracts),
     financials: clone(seed.contractFinancials),
     conceptSections: clone(seed.conceptSections),
@@ -219,11 +229,12 @@ export function createMockRepositories(): Repositories {
         const u = currentUser()
         const mine = db.contracts.filter((c) => {
           switch (u.role) {
-            case 'resident': return c.residentId === u.id || c.createdById === u.id
+            case 'entity':         return c.entityId === u.id
+            case 'resident':       return c.residentId === u.id
             case 'superintendent': return c.superintendentId === u.id
-            case 'supervisor': return c.supervisorId === u.id
-            case 'financial': return c.financialId === u.id
-            default: return false // admin has no contract access
+            case 'supervisor':     return c.supervisorId === u.id
+            case 'financial':      return c.entityId === u.entityId
+            default:               return false
           }
         })
         return clone(mine)
@@ -285,12 +296,14 @@ export function createMockRepositories(): Repositories {
           estimatePeriodicity: input.estimatePeriodicity,
           startDate: input.startDate,
           endDate: input.endDate,
+          entityId: currentUserId,
           createdById: currentUserId,
-          residentId: currentUserId,
+          residentId: input.residentId ?? null,
           superintendentId: input.superintendentId,
           supervisorId: input.supervisorId,
-          financialId: input.financialId,
-          contractorCorporationId: input.contractorCorporationId,
+          superintendentCorporationId: input.superintendentCorporationId ?? null,
+          supervisorCorporationId: input.supervisorCorporationId ?? null,
+          contractorCorporationId: input.superintendentCorporationId ?? input.contractorCorporationId ?? null,
           createdAt: now,
           updatedAt: now,
         }
@@ -323,6 +336,22 @@ export function createMockRepositories(): Repositories {
         const c = db.contracts.find((x) => x.id === id)
         if (!c) throw notFound('Contrato')
         Object.assign(c, patch, { updatedAt: new Date() })
+        return clone(c)
+      },
+      async assignRoles(id, patch) {
+        await delay()
+        const user = currentUser()
+        if (user.role !== 'entity') throw new RepositoryError(403, 'Solo la entidad puede reasignar roles', 'forbidden')
+        const c = db.contracts.find((x) => x.id === id)
+        if (!c) throw notFound('Contrato')
+        if (c.entityId !== user.id) throw new RepositoryError(403, 'Contrato de otra entidad', 'forbidden')
+        if (patch.residentId !== undefined)                  c.residentId = patch.residentId ?? null
+        if (patch.superintendentId !== undefined)            c.superintendentId = patch.superintendentId ?? null
+        if (patch.supervisorId !== undefined)                c.supervisorId = patch.supervisorId ?? null
+        if (patch.superintendentCorporationId !== undefined) c.superintendentCorporationId = patch.superintendentCorporationId ?? null
+        if (patch.supervisorCorporationId !== undefined)     c.supervisorCorporationId = patch.supervisorCorporationId ?? null
+        c.updatedAt = new Date()
+        save()
         return clone(c)
       },
       async getFinancials(id) {
@@ -727,7 +756,71 @@ export function createMockRepositories(): Repositories {
         return transition(db.agreements, id, 'Convenio', 'submitted', 'submitted')
       },
       async approve(id) {
-        return transition(db.agreements, id, 'Convenio', 'approved', 'approved')
+        await delay()
+        const approver = currentUser()
+        if (approver.role !== 'entity') throw new RepositoryError(403, 'Solo la entidad puede aprobar convenios', 'forbidden')
+        const a = db.agreements.find((x) => x.id === id)
+        if (!a) throw notFound('Convenio')
+        if (a.status !== 'pending_entity') {
+          throw new RepositoryError(409, 'El convenio debe estar pendiente de aprobación de entidad', 'wrong_status')
+        }
+        a.status = 'approved'
+        a.history.push(event('entity_approved'))
+        // Apply contract date overrides and new sections/concepts now that entity approved
+        const contract = db.contracts.find((c) => c.id === a.contractId)
+        if (contract) {
+          if (a.newContractStartDate) { contract.startDate = a.newContractStartDate; contract.updatedAt = new Date() }
+          if (a.newContractEndDate)   { contract.endDate   = a.newContractEndDate;   contract.updatedAt = new Date() }
+        }
+        // Create new sections
+        const createdAgSections: ConceptSection[] = (a.newSections ?? []).map((ns, i) => {
+          const existingCount = db.conceptSections.filter(s => s.contractId === a.contractId).length
+          const sec: ConceptSection = {
+            id: genId('CS') as ConceptSection['id'],
+            contractId: a.contractId,
+            specificationNumber: ns.specificationNumber,
+            description: ns.description,
+            startDate: new Date(),
+            endDate: new Date(),
+            order: existingCount + i,
+          }
+          db.conceptSections.push(sec)
+          return sec
+        })
+        // Apply concept changes and new concepts
+        for (const change of a.conceptChanges) {
+          const concept = db.concepts.find((c) => String(c.id) === String(change.conceptId))
+          if (!concept) continue
+          if (change.newQuantity != null)  concept.contractedQuantity = change.newQuantity
+          if (change.newUnitPrice != null) concept.unitPrice = change.newUnitPrice
+        }
+        for (const draft of a.newConcepts) {
+          const conceptFields = {
+            specificationNumber: draft.specificationNumber,
+            description: draft.description,
+            unit: draft.unit,
+            contractedQuantity: draft.contractedQuantity,
+            unitPrice: draft.unitPrice,
+          }
+          const draftSectionId = (draft as typeof draft & { sectionId?: string }).sectionId ?? null
+          const resolvedSectionId = draftSectionId
+            ? (createdAgSections.find(s => s.id === draftSectionId)?.id ?? draftSectionId)
+            : null
+          const newConcept = {
+            id: genId('CN'),
+            contractId: a.contractId,
+            sectionId: resolvedSectionId,
+            ...conceptFields,
+          }
+          db.concepts.push(newConcept)
+        }
+        // Recalculate contract amount
+        const allConcepts = db.concepts.filter(c => c.contractId === a.contractId)
+        if (contract) {
+          contract.amount = allConcepts.reduce((s, c) => s + c.unitPrice * c.contractedQuantity, 0)
+        }
+        save()
+        return clone(a)
       },
       async returnWithNotes(id, note) {
         return transition(db.agreements, id, 'Convenio', 'with_notes', 'returned_with_notes', note)
@@ -746,88 +839,10 @@ export function createMockRepositories(): Repositories {
         a.history.push(event('signed'))
         const allSigned = a.signatures.every((s) => s.status === 'signed')
         if (allSigned) {
-          a.status = 'approved'
-          a.history.push(event('approved'))
-          // Apply direct contract date overrides.
-          const contract = db.contracts.find((c) => c.id === a.contractId)
-          if (contract) {
-            if (a.newContractStartDate) {
-              contract.startDate = a.newContractStartDate
-              contract.updatedAt = new Date()
-            }
-            if (a.newContractEndDate) {
-              contract.endDate = a.newContractEndDate
-              contract.updatedAt = new Date()
-            }
-          }
-          save()
-          // Create new sections from this agreement.
-          const createdAgSections: ConceptSection[] = (a.newSections ?? []).map((ns, i) => {
-            const existingCount = db.conceptSections.filter(s => s.contractId === a.contractId).length
-            const sec: ConceptSection = {
-              id: genId('CS') as ConceptSection['id'],
-              contractId: a.contractId,
-              specificationNumber: ns.specificationNumber,
-              description: ns.description,
-              startDate: ns.startDate,
-              endDate: ns.endDate,
-              order: existingCount + i,
-            }
-            db.conceptSections.push(sec)
-            return sec
-          })
-          // Apply concept changes to catalog.
-          for (const change of a.conceptChanges) {
-            const concept = db.concepts.find((c) => c.id === change.conceptId)
-            if (!concept) continue
-            if (change.contractedQuantity != null) concept.contractedQuantity = change.contractedQuantity
-            if (change.unitPrice != null) concept.unitPrice = change.unitPrice
-            // Apply schedule date overrides.
-            if (change.startDate != null || change.endDate != null) {
-              const schedule = db.schedules.find((s) => s.contractId === a.contractId)
-              if (schedule) {
-                const item = schedule.items.find((i) => i.conceptId === change.conceptId)
-                if (item) {
-                  if (change.startDate != null) item.startDate = change.startDate
-                  if (change.endDate != null) item.endDate = change.endDate
-                }
-              }
-            }
-          }
-          // Create new concepts and add schedule items for them.
-          for (const draft of a.newConcepts) {
-            const { startDate, endDate, ...conceptFields } = draft as typeof draft & { startDate?: Date; endDate?: Date }
-            // sectionId may reference an existing section or one just created by this agreement
-            const draftSectionId = (draft as typeof draft & { sectionId?: string }).sectionId ?? null
-            const resolvedSectionId = draftSectionId
-              ? (createdAgSections.find(s => s.id === draftSectionId)?.id ?? draftSectionId)
-              : null
-            const newConcept = {
-              id: genId('CN'),
-              contractId: a.contractId,
-              sectionId: resolvedSectionId,
-              ...conceptFields,
-            }
-            db.concepts.push(newConcept)
-        save()
-            const schedule = db.schedules.find((s) => s.contractId === a.contractId)
-            if (schedule && startDate && endDate) {
-              schedule.items.push({
-                id: genId('SI'),
-                contractId: a.contractId,
-                label: draft.description,
-                conceptId: newConcept.id,
-                startDate,
-                endDate,
-                programmedPercentage: 0,
-                actualPercentage: null,
-                programmedAmount: draft.unitPrice * draft.contractedQuantity,
-                actualAmount: null,
-              })
-            }
-          }
-          // timeDeltaDays is kept as an informational field but direct date overrides
-          // (newContractStartDate / newContractEndDate) are applied above.
+          a.status = 'pending_entity'
+          a.history.push(event('pending_entity'))
+          // All contract changes (sections, concepts, dates) are applied when the
+          // entity explicitly approves via agreements.approve — not here.
         }
         a.updatedAt = new Date()
         save()
@@ -1051,7 +1066,7 @@ export function createMockRepositories(): Repositories {
         if (db.users.some((u) => u.username === input.username)) {
           throw new RepositoryError(409, 'El nombre de usuario ya existe', 'username_taken')
         }
-        const user: User = { id: genId('U'), fullName: input.fullName, username: input.username, email: input.email ?? null, role: input.role, corporationId: input.corporationId ?? null, active: true }
+        const user: User = { id: genId('U'), fullName: input.fullName, username: input.username, email: input.email ?? null, role: input.role, corporationId: input.corporationId ?? null, entityId: input.entityId ?? null, active: true }
         db.users.push(user)
         save()
         if (input.password) db.passwords[user.id] = input.password
@@ -1085,7 +1100,7 @@ export function createMockRepositories(): Repositories {
       },
       async create(input: CreateCorporationInput) {
         await delay()
-        const corp: Corporation = { id: genId('CORP'), name: input.name, rfc: input.rfc ?? null, superintendentId: input.superintendentId ?? null, active: true }
+        const corp: Corporation = { id: genId('CORP'), name: input.name, rfc: input.rfc ?? null, active: true }
         db.corporations.push(corp)
         save()
         return clone(corp)
@@ -1152,6 +1167,8 @@ function makeCloseFlow<T extends CloseEntity>(
     },
     async initiate(contractId: string) {
       await delayLocal()
+      const existing = arr.find((e) => e.contractId === contractId)
+      if (existing) throw new RepositoryError(409, 'Ya existe un registro para este contrato', 'already_exists')
       const entity = {
         id: genId(idPrefix),
         contractId,
@@ -1177,19 +1194,23 @@ function makeCloseFlow<T extends CloseEntity>(
     },
     async approve(id: string) {
       await delayLocal()
+      const user = db.users.find((u) => u.id === me())
+      if (user?.role !== 'entity') throw new RepositoryError(403, 'Solo la entidad puede aprobar', 'forbidden')
       const e = find(id)
+      if (e.status !== 'pending_entity') throw new RepositoryError(409, 'El documento debe estar pendiente de aprobación de entidad', 'wrong_status')
       e.status = 'approved'
-      e.history.push(event('approved'))
-      save()
+      e.history.push(event('entity_approved'))
       save()
       return cloneLocal(e)
     },
     async returnWithNotes(id: string, note: string) {
       await delayLocal()
       const e = find(id)
+      if (e.status !== 'submitted' && e.status !== 'pending_entity') {
+        throw new RepositoryError(409, 'Solo se puede devolver un documento enviado o pendiente de aprobación', 'wrong_status')
+      }
       e.status = 'with_notes'
       e.history.push(event('returned_with_notes', note))
-      save()
       save()
       return cloneLocal(e)
     },
@@ -1210,11 +1231,11 @@ function makeCloseFlow<T extends CloseEntity>(
       }
       sign(e.signatures)
       e.history.push(event('signed'))
-      // Auto-approve once every signing slot is filled.
+      // All signed → pending entity approval (entity must explicitly approve)
       const allSigned = (e.signatures as Signature[]).every((s) => s.status === 'signed')
       if (allSigned) {
-        e.status = 'approved'
-        e.history.push(event('approved'))
+        e.status = 'pending_entity'
+        e.history.push(event('pending_entity'))
       }
       save()
       return cloneLocal(e)

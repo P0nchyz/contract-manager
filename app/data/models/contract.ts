@@ -7,6 +7,9 @@ import type {
   UserId,
 } from './common'
 
+// Re-export convenience: EntityId is just a UserId with role==='entity'
+type EntityId = UserId
+
 export type ContractStatus =
   | 'active'
   | 'closing' // receive/close process initiated
@@ -33,12 +36,14 @@ export interface Contract {
   endDate: Date
 
   // Parties
-  createdById: UserId // the resident who created it
-  residentId: UserId
-  superintendentId: UserId | null
-  supervisorId: UserId | null
-  financialId: UserId | null
-  contractorCorporationId: CorporationId | null
+  entityId: EntityId              // the entity that created and owns this contract
+  createdById: UserId             // the entity user who created it
+  residentId: UserId | null       // assigned by the entity from their resident pool
+  superintendentId: UserId | null // assigned by the entity
+  supervisorId: UserId | null     // assigned by the entity
+  superintendentCorporationId: CorporationId | null // frozen at assignment time
+  supervisorCorporationId: CorporationId | null     // frozen at assignment time
+  contractorCorporationId: CorporationId | null     // same as superintendentCorporationId
 
   createdAt: Date
   updatedAt: Date

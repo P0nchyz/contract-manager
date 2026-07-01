@@ -31,9 +31,6 @@ export interface NewConceptDraft {
   unitPrice: Money
   contractedQuantity: number
   sectionId?: ConceptSectionId | null
-  // Optional schedule entry for this new concept
-  startDate?: Date
-  endDate?: Date
 }
 
 /**
@@ -43,11 +40,8 @@ export interface NewConceptDraft {
 export interface ConceptChange {
   conceptId: ConceptId
   // Catalog overrides (applied to the concept on approval)
-  contractedQuantity?: number
-  unitPrice?: Money
-  // Schedule overrides (applied to the matching ScheduleItem on approval)
-  startDate?: Date
-  endDate?: Date
+  newQuantity?: number
+  newUnitPrice?: Money
 }
 
 /**
@@ -57,8 +51,6 @@ export interface ConceptChange {
 export interface NewSectionDraft {
   specificationNumber: string
   description: string
-  startDate: Date
-  endDate: Date
   order: number
 }
 

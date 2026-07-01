@@ -50,11 +50,14 @@ const canSign = computed(
     mySlot.value.status === 'pending',
 )
 const canReturn = computed(
-  () => st.value === 'submitted' && can('estimate:returnWithNotes'),
+  () => (st.value === 'submitted' || st.value === 'pending_entity') && can('estimate:returnWithNotes'),
 )
 const canReject = computed(() => st.value === 'submitted' && can('estimate:reject'))
+const canApproveAsEntity = computed(
+  () => st.value === 'pending_entity' && can('agreement:approve'),
+)
 const showReview = computed(() => canReturn.value || canReject.value)
-const hasBarAction = computed(() => canSubmit.value || canSign.value)
+const hasBarAction = computed(() => canSubmit.value || canSign.value || canApproveAsEntity.value)
 
 const latestNote = computed(() => {
   const fin = finiquito.value
@@ -86,6 +89,7 @@ async function run(fn: () => Promise<unknown>) {
 const initiate = () => run(() => repos.finiquito.initiate(contractId.value))
 const submit = () => run(() => repos.finiquito.submit(finiquito.value!.id))
 const sign = () => run(() => repos.finiquito.sign(finiquito.value!.id))
+const approveAsEntity = () => run(() => repos.finiquito.approve(finiquito.value!.id))
 
 const reviewNote = ref('')
 const reviewError = ref<string | null>(null)
@@ -317,6 +321,15 @@ const reject = () => withNote(repos.finiquito.reject)
             @click="sign"
           >
             {{ F.actions.sign }}
+          </UButton>
+          <UButton
+            v-if="canApproveAsEntity"
+            color="success"
+            icon="i-lucide-check-circle"
+            :loading="busy"
+            @click="approveAsEntity"
+          >
+            Aprobar
           </UButton>
         </div>
       </div>

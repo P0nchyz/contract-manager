@@ -32,32 +32,32 @@ const { data, status, error, refresh } = await useAsyncData(
 
     const periodicity = contract.estimatePeriodicity ?? 'monthly'
     const periods = buildPeriods(new Date(contract.startDate), new Date(contract.endDate), periodicity)
-    const curIdx  = getCurrentPeriodIdx(periods)
+    const curIdx = getCurrentPeriodIdx(periods)
 
     // Roll up physical (approved+paid) and financial (paid) per concept per period
     const progress: PeriodProgress[] = []
     for (const est of estimates) {
-      const isPhysical  = est.status === 'approved' || est.status === 'paid'
+      const isPhysical = est.status === 'approved' || est.status === 'paid'
       const isFinancial = est.status === 'paid'
       if (!isPhysical) continue
       for (const li of est.lineItems) {
         progress.push({
-          conceptId:    String(li.conceptId),
-          periodIndex:  est.periodIndex - 1, // 1-based → 0-based
-          physicalQty:  li.inThisEstimate,
+          conceptId: String(li.conceptId),
+          periodIndex: est.periodIndex - 1, // 1-based → 0-based
+          physicalQty: li.inThisEstimate,
           financialQty: isFinancial ? li.inThisEstimate : 0,
         })
       }
     }
 
     const conceptMetas: ConceptMeta[] = concepts.map((c) => ({
-      conceptId:           String(c.id),
-      contractedQuantity:  c.contractedQuantity,
-      unitPrice:           c.unitPrice,
+      conceptId: String(c.id),
+      contractedQuantity: c.contractedQuantity,
+      unitPrice: c.unitPrice,
     }))
 
-    const curve    = buildScheduleCurve(periods, schedule.entries, conceptMetas, progress, curIdx)
-    const statuses = computeConceptStatuses(schedule.entries, conceptMetas, progress, curIdx)
+    const curve = buildScheduleCurve(periods, (schedule.entries ?? []), conceptMetas, progress, curIdx)
+    const statuses = computeConceptStatuses((schedule.entries ?? []), conceptMetas, progress, curIdx)
     const statusMap = Object.fromEntries(statuses.map((s) => [s.conceptId, s]))
 
     // Build Gantt entries: first to last active period per concept
@@ -65,12 +65,12 @@ const { data, status, error, refresh } = await useAsyncData(
       const cid = String(c.id)
       const cEntries = schedule.entries.filter((e) => String(e.conceptId) === cid && e.plannedQuantity > 0)
       const first = cEntries.length > 0 ? Math.min(...cEntries.map((e) => e.periodIndex)) : -1
-      const last  = cEntries.length > 0 ? Math.max(...cEntries.map((e) => e.periodIndex)) : -1
+      const last = cEntries.length > 0 ? Math.max(...cEntries.map((e) => e.periodIndex)) : -1
       return {
         conceptId: cid,
-        label:     c.description,
+        label: c.description,
         startDate: first >= 0 ? new Date(periods[first].start) : new Date(contract.startDate),
-        endDate:   last  >= 0 ? new Date(periods[last].end)    : new Date(contract.endDate),
+        endDate: last >= 0 ? new Date(periods[last].end) : new Date(contract.endDate),
         programmedAmount: c.unitPrice * c.contractedQuantity,
         status: statusMap[cid] ?? {
           conceptId: cid, status: 'future' as const,
@@ -102,12 +102,12 @@ const latestPoint = computed(() => {
 
 // Status badge color mapping
 function statusColor(s: ConceptGanttStatus['status']): 'success' | 'error' | 'warning' | 'neutral' | 'info' {
-  return s === 'done'      ? 'success' :
-         s === 'ahead'     ? 'info'    :
-         s === 'behind'    ? 'error'   :
-         s === 'overdue'   ? 'error'   :
-         s === 'on_track'  ? 'success' :
-         'neutral'
+  return s === 'done' ? 'success' :
+    s === 'ahead' ? 'info' :
+      s === 'behind' ? 'error' :
+        s === 'overdue' ? 'error' :
+          s === 'on_track' ? 'success' :
+            'neutral'
 }
 
 const ganttHeight = computed(() =>
@@ -120,26 +120,15 @@ const ganttHeight = computed(() =>
     <template #header>
       <UDashboardNavbar :title="SP.title">
         <template #leading>
-          <UButton
-            icon="i-lucide-arrow-left"
-            color="neutral"
-            variant="ghost"
-            :to="`/contracts/${contractId}`"
-            :aria-label="S.common.back"
-          />
+          <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" :to="`/contracts/${contractId}`"
+            :aria-label="S.common.back" />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <UAlert
-        v-if="error"
-        color="error"
-        variant="soft"
-        icon="i-lucide-alert-triangle"
-        :title="S.common.error"
-        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
-      />
+      <UAlert v-if="error" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="S.common.error"
+        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]" />
 
       <div v-else-if="status === 'pending'" class="space-y-4">
         <USkeleton class="h-24 w-full rounded-lg" />
@@ -187,12 +176,12 @@ const ganttHeight = computed(() =>
           <UCard>
             <div class="space-y-1.5">
               <div v-for="[key, label, color] in [
-                ['done',    SP.statusLabel.done,    'text-success'],
-                ['ahead',   SP.statusLabel.ahead,   'text-info'],
-                ['on_track',SP.statusLabel.on_track,'text-success'],
-                ['behind',  SP.statusLabel.behind,  'text-error'],
+                ['done', SP.statusLabel.done, 'text-success'],
+                ['ahead', SP.statusLabel.ahead, 'text-info'],
+                ['on_track', SP.statusLabel.on_track, 'text-success'],
+                ['behind', SP.statusLabel.behind, 'text-error'],
                 ['overdue', SP.statusLabel.overdue, 'text-error'],
-                ['future',  SP.statusLabel.future,  'text-muted'],
+                ['future', SP.statusLabel.future, 'text-muted'],
               ] as const" :key="key" class="flex items-center justify-between text-xs">
                 <span :class="color">{{ label }}</span>
                 <span class="font-semibold tabular-nums text-highlighted">{{ statusCounts[key] ?? 0 }}</span>
@@ -224,7 +213,8 @@ const ganttHeight = computed(() =>
                   <span class="size-2.5 rounded-sm bg-[#ef4444] opacity-70" />{{ SP.gantt.legend.behind }}
                 </span>
                 <span class="flex items-center gap-1.5">
-                  <span class="size-2.5 rounded-sm bg-[#6b7280] opacity-30 border border-[#6b7280]" />{{ SP.gantt.legend.remaining }}
+                  <span class="size-2.5 rounded-sm bg-[#6b7280] opacity-30 border border-[#6b7280]" />{{
+                    SP.gantt.legend.remaining }}
                 </span>
                 <span class="flex items-center gap-1.5">
                   <span class="inline-block h-2 w-4 border-b-2 border-dashed border-amber-400" />{{ SP.gantt.today }}
@@ -234,13 +224,8 @@ const ganttHeight = computed(() =>
           </template>
 
           <div class="px-4 py-4">
-            <ScheduleGantt
-              :entries="data.ganttEntries"
-              :contract-start="new Date(data.contract.startDate)"
-              :contract-end="new Date(data.contract.endDate)"
-              :periodicity="data.periodicity"
-              :height="ganttHeight"
-            />
+            <ScheduleGantt :entries="data.ganttEntries" :contract-start="new Date(data.contract.startDate)"
+              :contract-end="new Date(data.contract.endDate)" :periodicity="data.periodicity" :height="ganttHeight" />
           </div>
         </UCard>
 
@@ -288,26 +273,18 @@ const ganttHeight = computed(() =>
                   <td class="px-4 py-2.5 text-right tabular-nums font-medium text-highlighted">
                     {{ entry.status.actualProgress.toFixed(1) }}%
                   </td>
-                  <td
-                    class="px-4 py-2.5 text-right tabular-nums font-semibold"
-                    :class="
-                      entry.status.delta > 0 ? 'text-info' :
-                      entry.status.delta < 0 ? 'text-error' :
+                  <td class="px-4 py-2.5 text-right tabular-nums font-semibold" :class="entry.status.delta > 0 ? 'text-info' :
+                    entry.status.delta < 0 ? 'text-error' :
                       'text-muted'
-                    "
-                  >
+                    ">
                     <template v-if="entry.status.status !== 'future' && entry.status.status !== 'done'">
                       {{ entry.status.delta > 0 ? '+' : '' }}{{ entry.status.delta.toFixed(1) }}%
                     </template>
                     <span v-else class="text-muted font-normal">—</span>
                   </td>
                   <td class="px-4 py-2.5">
-                    <UBadge
-                      :label="SP.statusLabel[entry.status.status] ?? entry.status.status"
-                      :color="statusColor(entry.status.status)"
-                      variant="soft"
-                      size="sm"
-                    />
+                    <UBadge :label="SP.statusLabel[entry.status.status] ?? entry.status.status"
+                      :color="statusColor(entry.status.status)" variant="soft" size="sm" />
                   </td>
                 </tr>
               </tbody>

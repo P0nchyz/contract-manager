@@ -31,15 +31,17 @@ const d = (iso: string) => new Date(iso)
 
 // --- Organizations ---------------------------------------------------------
 export const corporations: Corporation[] = [
-  { id: 'CORP-001', name: 'Constructora del Valle, S.A. de C.V.', rfc: 'CVA120511AB3', superintendentId: 'U-SUP', active: true },
+  { id: 'CORP-001', name: 'Constructora del Valle, S.A. de C.V.', rfc: 'CVA120511AB3', active: true },
+  { id: 'CORP-002', name: 'Supervisores Técnicos Asociados, S.C.', rfc: 'STA150309XY2', active: true },
 ]
 
 export const users: User[] = [
-  { id: 'U-ADMIN', fullName: 'Ana Admin', username: 'admin', email: 'admin@example.mx', role: 'admin', corporationId: null, active: true },
-  { id: 'U-RES', fullName: 'Roberto Residente', username: 'rresidente', email: 'rres@example.mx', role: 'resident', corporationId: null, active: true },
-  { id: 'U-SUP', fullName: 'Susana Superintendente', username: 'ssuper', email: 'ssup@example.mx', role: 'superintendent', corporationId: 'CORP-001', active: true },
-  { id: 'U-SVR', fullName: 'Sergio Supervisor', username: 'ssupervisor', email: 'ssvr@example.mx', role: 'supervisor', corporationId: null, active: true },
-  { id: 'U-FIN', fullName: 'Fabiola Financiera', username: 'ffinanzas', email: 'ffin@example.mx', role: 'financial', corporationId: null, active: true },
+  { id: 'U-ADMIN', fullName: 'Ana Admin',                       username: 'admin',       email: 'admin@example.mx', role: 'admin',          corporationId: null,       entityId: null,    active: true },
+  { id: 'U-ENT',  fullName: 'Dirección General de Obra Pública', username: 'entidad',     email: 'ent@srob.gob.mx',  role: 'entity',         corporationId: null,       entityId: null,    active: true },
+  { id: 'U-RES',  fullName: 'Roberto Residente',                 username: 'rresidente',  email: 'rres@srob.gob.mx', role: 'resident',       corporationId: null,       entityId: 'U-ENT', active: true },
+  { id: 'U-SUP',  fullName: 'Susana Superintendente',            username: 'ssuper',      email: 'ssup@example.mx',  role: 'superintendent', corporationId: 'CORP-001', entityId: null,    active: true },
+  { id: 'U-SVR',  fullName: 'Sergio Supervisor',                 username: 'ssupervisor', email: 'ssvr@example.mx',  role: 'supervisor',     corporationId: 'CORP-002', entityId: null,    active: true },
+  { id: 'U-FIN',  fullName: 'Fabiola Financiera',                username: 'ffinanzas',   email: 'ffin@srob.gob.mx', role: 'financial',      corporationId: null,       entityId: 'U-ENT', active: true },
 ]
 
 // --- Contract --------------------------------------------------------------
@@ -56,11 +58,13 @@ export const contracts: Contract[] = [
     estimatePeriodicity: 'monthly' as const,
     startDate: d('2024-01-15'),
     endDate: d('2024-12-31'),
-    createdById: 'U-RES',
+    entityId: 'U-ENT',
+    createdById: 'U-ENT',
     residentId: 'U-RES',
     superintendentId: 'U-SUP',
     supervisorId: 'U-SVR',
-    financialId: 'U-FIN',
+    superintendentCorporationId: 'CORP-001',
+    supervisorCorporationId: 'CORP-002',
     contractorCorporationId: 'CORP-001',
     createdAt: d('2024-01-10'),
     updatedAt: d('2024-03-01'),

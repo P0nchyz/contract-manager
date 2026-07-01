@@ -27,10 +27,11 @@ const { data, status, error, refresh } = await useAsyncData(
     ])
     const names: Record<string, string> = {}
     for (const u of users) names[u.id] = u.fullName
-    const scheduleByConceptId: Record<string, { startDate: Date; endDate: Date }> = {}
+    // scheduleByConceptId not used for dates anymore (schedule is period-based)
+    const scheduleByConceptId: Record<string, { periodIndex: number; plannedQuantity: number }> = {}
     if (schedule) {
-      for (const item of schedule.items) {
-        if (item.conceptId) scheduleByConceptId[item.conceptId] = item
+      for (const entry of (schedule.entries ?? [])) {
+        if (entry.conceptId) scheduleByConceptId[String(entry.conceptId)] = entry
       }
     }
     return { agreement, names, concepts, scheduleByConceptId }
@@ -61,11 +62,14 @@ const canSign = computed(
     mySlot.value.status === 'pending',
 )
 const canReturn = computed(
-  () => st.value === 'submitted' && can('estimate:returnWithNotes'),
+  () => (st.value === 'submitted' || st.value === 'pending_entity') && can('estimate:returnWithNotes'),
 )
 const canReject = computed(() => st.value === 'submitted' && can('estimate:reject'))
+const canApproveAsEntity = computed(
+  () => st.value === 'pending_entity' && can('agreement:approve'),
+)
 const showReview = computed(() => canReturn.value || canReject.value)
-const hasBarAction = computed(() => canEdit.value || canSubmit.value || canSign.value)
+const hasBarAction = computed(() => canEdit.value || canSubmit.value || canSign.value || canApproveAsEntity.value)
 
 const latestNote = computed(() => {
   const ag = agreement.value
@@ -96,6 +100,7 @@ async function run(fn: () => Promise<unknown>) {
 
 const submit = () => run(() => repos.agreements.submit(agreementId.value))
 const sign = () => run(() => repos.agreements.sign(agreementId.value))
+const approveAsEntity = () => run(() => repos.agreements.approve(agreementId.value))
 
 const reviewNote = ref('')
 const reviewError = ref<string | null>(null)
@@ -211,23 +216,15 @@ const editLink = computed(() => ({
                     <td class="px-3 py-2 text-right tabular-nums text-muted">{{
                       formatNumber(conceptOf(cc.conceptId)?.contractedQuantity ?? 0) }}</td>
                     <td class="px-3 py-2 text-right tabular-nums"
-                      :class="cc.contractedQuantity != null ? 'font-medium text-success' : 'text-muted'">
-                      {{ cc.contractedQuantity != null ? formatNumber(cc.contractedQuantity) : '—' }}
+                      :class="cc.newQuantity != null ? 'font-medium text-success' : 'text-muted'">
+                      {{ cc.newQuantity != null ? formatNumber(cc.newQuantity) : '—' }}
                     </td>
                     <td class="px-3 py-2 text-right tabular-nums text-muted">{{
                       formatMoney(conceptOf(cc.conceptId)?.unitPrice ??
                       0) }}</td>
                     <td class="px-3 py-2 text-right tabular-nums"
-                      :class="cc.unitPrice != null ? 'font-medium text-success' : 'text-muted'">
-                      {{ cc.unitPrice != null ? formatMoney(cc.unitPrice) : '—' }}
-                    </td>
-                    <td class="px-3 py-2 text-center" :class="cc.startDate ? 'text-success font-medium' : 'text-muted'">
-                      {{ cc.startDate ? formatDate(cc.startDate) : (scheduleOf(cc.conceptId)?.startDate ?
-                        formatDate(scheduleOf(cc.conceptId)!.startDate) : '—') }}
-                    </td>
-                    <td class="px-3 py-2 text-center" :class="cc.endDate ? 'text-success font-medium' : 'text-muted'">
-                      {{ cc.endDate ? formatDate(cc.endDate) : (scheduleOf(cc.conceptId)?.endDate ?
-                        formatDate(scheduleOf(cc.conceptId)!.endDate) : '—') }}
+                      :class="cc.newUnitPrice != null ? 'font-medium text-success' : 'text-muted'">
+                      {{ cc.newUnitPrice != null ? formatMoney(cc.newUnitPrice) : '—' }}
                     </td>
                   </tr>
                 </tbody>
@@ -247,8 +244,7 @@ const editLink = computed(() => ({
                     <th class="px-3 py-2 text-left font-medium">{{ AG.newConcepts.columns.unit }}</th>
                     <th class="px-3 py-2 text-right font-medium">{{ AG.newConcepts.columns.qty }}</th>
                     <th class="px-3 py-2 text-right font-medium">{{ AG.newConcepts.columns.unitPrice }}</th>
-                    <th class="px-3 py-2 text-center font-medium">{{ AG.newConcepts.columns.scheduleStart }}</th>
-                    <th class="px-3 py-2 text-center font-medium">{{ AG.newConcepts.columns.scheduleEnd }}</th>
+
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-default">
@@ -259,16 +255,7 @@ const editLink = computed(() => ({
                     <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{
                       formatNumber(nc.contractedQuantity) }}</td>
                     <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatMoney(nc.unitPrice) }}</td>
-                    <td class="px-3 py-2 text-center text-muted">
-                      {{ (nc as typeof nc & { startDate?: Date }).startDate ? formatDate((nc as typeof nc & {
-                        startDate?: Date
-                      }).startDate!) : '—' }}
-                    </td>
-                    <td class="px-3 py-2 text-center text-muted">
-                      {{ (nc as typeof nc & { endDate?: Date }).endDate ? formatDate((nc as typeof nc & {
-                        endDate?: Date
-                      }).endDate!) : '—' }}
-                    </td>
+
                   </tr>
                 </tbody>
               </table>
@@ -284,16 +271,14 @@ const editLink = computed(() => ({
                   <tr>
                     <th class="px-3 py-2 text-left font-medium">{{ AG.conceptChanges.columns.specification }}</th>
                     <th class="px-3 py-2 text-left font-medium">Descripción</th>
-                    <th class="px-3 py-2 text-center font-medium">Inicio</th>
-                    <th class="px-3 py-2 text-center font-medium">Término</th>
+
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-default">
                   <tr v-for="ns in (agreement.newSections ?? [])" :key="ns.specificationNumber">
                     <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ ns.specificationNumber }}</td>
                     <td class="px-3 py-2 text-highlighted">{{ ns.description }}</td>
-                    <td class="px-3 py-2 text-center text-muted">{{ formatDate(ns.startDate) }}</td>
-                    <td class="px-3 py-2 text-center text-muted">{{ formatDate(ns.endDate) }}</td>
+
                   </tr>
                 </tbody>
               </table>
@@ -415,6 +400,10 @@ const editLink = computed(() => ({
             </UButton>
             <UButton v-if="canSign" color="success" icon="i-lucide-pen-line" :loading="busy" @click="sign">
               {{ AG.actions.sign }}
+            </UButton>
+            <UButton v-if="canApproveAsEntity" color="success" icon="i-lucide-check-circle" :loading="busy"
+              @click="approveAsEntity">
+              {{ AG.actions.approve ?? 'Aprobar' }}
             </UButton>
           </div>
         </div>

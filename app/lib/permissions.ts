@@ -1,57 +1,62 @@
 // app/lib/permissions.ts
 /**
- * Permission policy. Pure, framework-free: `can(role, permission)`. The Nuxt
- * composable `usePermissions()` wraps this with the current user. The backend
- * remains the source of truth; this only gates the UI.
- *
- * Roles are global; contract visibility is handled separately (by assignment).
+ * Permission policy. Pure, framework-free: `can(role, permission)`.
  */
 import type { Role } from '~/data/models'
 
 export type Permission =
-  | 'contract:create'
-  | 'contract:manage'
-  | 'contract:assign'
-  | 'estimate:create'
+  | 'contract:create'          // entity creates contracts
+  | 'contract:manage'          // entity/resident manage contract details
+  | 'contract:assign'          // entity: change resident/super/supervisor on a contract
+  | 'estimate:create'          // superintendent creates estimates
   | 'estimate:view'
-  // NOTE: no 'estimate:approve' — signing IS approving.
-  // All three signing roles must sign a submitted estimate; once all slots are
-  // filled the mock auto-transitions status to 'approved'.
-  | 'estimate:returnWithNotes' // supervisor only: return to superintendent for revision
-  | 'estimate:reject'          // resident only: permanently reject
-  | 'estimate:pay'             // financial only: mark paid
+  | 'estimate:returnWithNotes' // supervisor only
+  | 'estimate:reject'          // resident only
+  | 'estimate:pay'             // financial only
   | 'logNote:create'
-  | 'agreement:create'
-  | 'agreement:approve'
+  | 'agreement:create'         // resident + superintendent
+  | 'agreement:approve'        // entity approves after all sign
   | 'evidence:upload'
   | 'evidence:create'
   | 'file:upload'
-  | 'sign'
-  | 'close:initiate'
+  | 'sign'                     // resident + superintendent + supervisor
+  | 'close:initiate'           // entity initiates reception/finiquito
   | 'financial:view'
   | 'admin:users'
 
 const MATRIX: Record<Role, readonly Permission[]> = {
   admin: ['admin:users'],
-  resident: [
+
+  entity: [
     'contract:create', 'contract:manage', 'contract:assign',
+    'estimate:view',      // needs to see all contract pages
+    'logNote:create',
+    'agreement:approve',
+    'evidence:upload', 'evidence:create', 'file:upload',
+    'close:initiate', 'financial:view',
+  ],
+
+  resident: [
+    'contract:manage',
     'estimate:view', 'estimate:reject',
     'logNote:create', 'agreement:create',
     'evidence:upload', 'evidence:create', 'file:upload',
-    'sign', 'close:initiate', 'financial:view',
+    'sign', 'financial:view',
   ],
+
   superintendent: [
     'estimate:create', 'estimate:view',
     'logNote:create', 'agreement:create',
     'evidence:upload', 'evidence:create', 'file:upload',
     'sign', 'financial:view',
   ],
+
   supervisor: [
     'estimate:view', 'estimate:returnWithNotes',
-    'logNote:create', 'agreement:approve',
+    'logNote:create',
     'file:upload', 'sign', 'financial:view',
   ],
-  // Financial only sees approved/paid estimates (enforced in listByContract).
+
   financial: ['estimate:view', 'estimate:pay', 'financial:view'],
 }
 

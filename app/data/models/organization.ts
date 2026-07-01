@@ -9,7 +9,6 @@ export interface Corporation {
   id: CorporationId
   name: string
   rfc: string | null // Mexican tax ID
-  superintendentId: UserId | null // assigned superintendent
   active: boolean
 }
 
@@ -23,7 +22,9 @@ export interface User {
   username: string // login credential
   email: string | null
   role: Role
-  // Required when role === 'superintendent'; null otherwise.
+  // Required when role === 'superintendent' or 'supervisor'.
   corporationId: CorporationId | null
+  // Required when role === 'resident' or 'financial': the entity they belong to.
+  entityId: UserId | null
   active: boolean
 }

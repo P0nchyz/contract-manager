@@ -43,6 +43,7 @@ export type Percentage = number
 // --- Roles -----------------------------------------------------------------
 export type Role =
   | 'admin'
+  | 'entity'
   | 'resident'
   | 'superintendent'
   | 'supervisor'
@@ -68,6 +69,7 @@ export type AgreementStatus =
   | 'submitted'
   | 'with_notes'
   | 'rejected'
+  | 'pending_entity' // all three signed; awaiting entity explicit approval
   | 'approved'
 
 // --- Signatures (the "chips") ----------------------------------------------
@@ -87,6 +89,8 @@ export type WorkflowAction =
   | 'submitted'
   | 'returned_with_notes'
   | 'rejected'
+  | 'pending_entity'  // all three signed; entity approval required
+  | 'entity_approved' // entity explicitly approved
   | 'approved'
   | 'paid'
   | 'signed'

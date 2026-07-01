@@ -69,7 +69,8 @@ export function createHttpRepositories(http: HttpClient): Repositories {
       listMine: (p?: ListParams) => http.get<Contract[]>('/contracts', { query: p as never }), // TODO(map)
       getById: (id) => http.get<Contract>(`/contracts/${id}`), // TODO(map)
       create: (input: CreateContractInput) => http.post<Contract>('/contracts', input), // TODO(map)
-      update: (id, patch) => http.patch<Contract>(`/contracts/${id}`, patch), // TODO(map)
+      update: (id, patch) => http.patch<Contract>(`/contracts/${id}`, patch),
+      assignRoles: (id, patch) => http.patch<Contract>(`/contracts/${id}/roles`, patch), // TODO(map) // TODO(map)
       getFinancials: (id) => http.get<ContractFinancials>(`/contracts/${id}/financials`), // TODO(map)
     },
     concepts: {

@@ -23,30 +23,37 @@ export function buildNavigation(opts: {
   const { can, contractId } = opts
 
   const global: NavItem[] = []
-  if (can('estimate:view') || can('financial:view') || can('contract:manage')) {
+  if (can('estimate:view') || can('financial:view') || can('contract:manage') || can('contract:create')) {
     global.push({ label: S.nav.myContracts, icon: 'i-lucide-folder-open', to: '/' })
   }
   if (can('admin:users')) {
     global.push({ label: S.nav.users, icon: 'i-lucide-users', to: '/admin/users' })
   }
 
-  const contract: NavItem[] = []
+  const items: NavItem[] = []
   if (contractId) {
     const base = `/contracts/${contractId}`
-    contract.push({ label: S.nav.dashboard, icon: 'i-lucide-layout-dashboard', to: base })
-    contract.push({ label: S.nav.logbook, icon: 'i-lucide-notebook-pen', to: `${base}/logbook` })
+
+    items.push({ label: S.nav.dashboard, icon: 'i-lucide-layout-dashboard', to: base })
+    items.push({ label: S.nav.logbook,   icon: 'i-lucide-notebook-pen',     to: `${base}/logbook` })
+
     if (can('estimate:view')) {
-      contract.push({ label: S.nav.estimates, icon: 'i-lucide-file-spreadsheet', to: `${base}/estimates` })
+      items.push({ label: S.nav.estimates, icon: 'i-lucide-file-spreadsheet', to: `${base}/estimates` })
+      items.push({ label: S.nav.schedule,  icon: 'i-lucide-chart-gantt',      to: `${base}/schedule` })
     }
-    contract.push({ label: S.nav.schedule, icon: 'i-lucide-chart-gantt', to: `${base}/schedule` })
+
     if (can('financial:view')) {
-      contract.push({ label: S.nav.financial, icon: 'i-lucide-banknote', to: `${base}/financial` })
+      items.push({ label: S.nav.financial, icon: 'i-lucide-banknote', to: `${base}/financial` })
     }
-    contract.push({ label: S.nav.concepts, icon: 'i-lucide-list', to: `${base}/concepts` })
-    contract.push({ label: S.nav.evidence, icon: 'i-lucide-image', to: `${base}/evidence` })
-    contract.push({ label: S.nav.files, icon: 'i-lucide-folder', to: `${base}/files` })
-    contract.push({ label: S.nav.contract, icon: 'i-lucide-file-text', to: `${base}/contract` })
+
+    if (can('estimate:view')) {
+      items.push({ label: S.nav.concepts, icon: 'i-lucide-list',  to: `${base}/concepts` })
+      items.push({ label: S.nav.evidence, icon: 'i-lucide-image', to: `${base}/evidence` })
+      items.push({ label: S.nav.files,    icon: 'i-lucide-folder', to: `${base}/files` })
+    }
+
+    items.push({ label: S.nav.contract, icon: 'i-lucide-file-text', to: `${base}/contract` })
   }
 
-  return { global, contract }
+  return { global, contract: items }
 }

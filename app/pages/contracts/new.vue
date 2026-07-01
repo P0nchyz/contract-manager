@@ -9,6 +9,7 @@ definePageMeta({ requiredPermission: 'contract:create' })
 const F = S.newContract
 
 const repos = useRepositories()
+const authStore = useAuthStore()
 
 // ─── Reference data ──────────────────────────────────────────────────────────
 const { data: refs, status: refsStatus } = await useAsyncData('contract-new-refs', async () => {
@@ -17,9 +18,9 @@ const { data: refs, status: refsStatus } = await useAsyncData('contract-new-refs
     repos.corporations.list(),
   ])
   return {
+    residents: users.filter((u) => u.role === 'resident' && u.active && u.entityId === authStore.user?.id),
     superintendents: users.filter((u) => u.role === 'superintendent' && u.active),
     supervisors: users.filter((u) => u.role === 'supervisor' && u.active),
-    financials: users.filter((u) => u.role === 'financial' && u.active),
     corporations,
   }
 })
@@ -50,19 +51,23 @@ const periodicityOptions = [
 ]
 
 // ─── Form: section 3 — parties ───────────────────────────────────────────────
+const residentId = ref<string | null>(null)
+const superintendentCorpId = ref<string | null>(null)
 const superintendentId = ref<string | null>(null)
+const supervisorCorpId = ref<string | null>(null)
 const supervisorId = ref<string | null>(null)
-const financialId = ref<string | null>(null)
 
-const selectedSup = computed(() =>
-  refs.value?.superintendents.find((u) => u.id === superintendentId.value) ?? null,
+const superintendentsForCorp = computed(() =>
+  refs.value?.superintendents.filter((u) => u.corporationId === superintendentCorpId.value) ?? [],
 )
-const corpName = computed(() =>
-  selectedSup.value?.corporationId
-    ? (refs.value?.corporations.find((c) => c.id === selectedSup.value!.corporationId)?.name ?? null)
-    : null,
+const supervisorsForCorp = computed(() =>
+  refs.value?.supervisors.filter((u) => u.corporationId === supervisorCorpId.value) ?? [],
 )
-const contractorCorporationId = computed(() => selectedSup.value?.corporationId ?? null)
+
+watch(superintendentCorpId, () => { superintendentId.value = null })
+watch(supervisorCorpId, () => { supervisorId.value = null })
+
+const contractorCorporationId = computed(() => superintendentCorpId.value)
 
 // ─── Form: section 3.5 — catalog sections ────────────────────────────────────
 
@@ -224,6 +229,7 @@ const errors = computed(() => ({
   anticipo: (anticipoPct.value === '' || Number(anticipoPct.value) < 0 || Number(anticipoPct.value) > 100) ? F.validation.anticipoRange : null,
   iva: (ivaRate.value === '' || Number(ivaRate.value) < 0 || Number(ivaRate.value) > 100) ? F.validation.ivaRange : null,
   retention: (retentionPct.value === '' || Number(retentionPct.value) < 0 || Number(retentionPct.value) > 100) ? F.validation.retentionRange : null,
+  resident: !residentId.value ? F.validation.residentRequired : null,
   superintendent: !superintendentId.value ? F.validation.superintendentRequired : null,
   supervisor: !supervisorId.value ? F.validation.supervisorRequired : null,
   concepts: !conceptsValid.value ? F.validation.conceptsRequired : null,
@@ -249,9 +255,11 @@ async function onSubmit() {
       estimatePeriodicity: periodicity.value,
       startDate: new Date(`${startDate.value}T12:00:00`),
       endDate: new Date(`${endDate.value}T12:00:00`),
-      superintendentId: superintendentId.value as string,
-      supervisorId: supervisorId.value as string,
-      financialId: financialId.value,
+      residentId: residentId.value,
+      superintendentId: superintendentId.value,
+      supervisorId: supervisorId.value,
+      superintendentCorporationId: superintendentCorpId.value,
+      supervisorCorporationId: supervisorCorpId.value,
       contractorCorporationId: contractorCorporationId.value,
       initialSections: resolvedSections.value,
       initialConcepts: resolvedConcepts.value,
@@ -461,23 +469,35 @@ const sections = [
             </div>
           </template>
           <div class="grid gap-4 sm:grid-cols-2">
+            <!-- Resident (from entity pool) -->
+            <UFormField :label="F.fields.resident" :error="errors.resident || undefined" class="sm:col-span-2">
+              <USelect v-model="residentId"
+                :items="(refs?.residents ?? []).map((u) => ({ label: u.fullName, value: u.id }))"
+                :placeholder="`— ${F.fields.resident} —`" class="w-full" />
+            </UFormField>
+
+            <!-- Superintendent: pick corporation first, then user -->
+            <UFormField label="Empresa contratista">
+              <USelect v-model="superintendentCorpId"
+                :items="(refs?.corporations ?? []).map((c) => ({ label: c.name, value: c.id }))"
+                placeholder="— Empresa —" class="w-full" />
+            </UFormField>
             <UFormField :label="F.fields.superintendent" :error="errors.superintendent || undefined">
-              <USelect v-model="superintendentId"
-                :items="(refs?.superintendents ?? []).map((u) => ({ label: u.fullName, value: u.id }))"
+              <USelect v-model="superintendentId" :disabled="!superintendentCorpId"
+                :items="superintendentsForCorp.map((u) => ({ label: u.fullName, value: u.id }))"
                 :placeholder="`— ${F.fields.superintendent} —`" class="w-full" />
             </UFormField>
-            <UFormField :label="F.fields.contractor" :hint="F.fields.contractorDerived">
-              <UInput :model-value="corpName ?? ''" disabled class="w-full" :placeholder="F.fields.contractorDerived" />
+
+            <!-- Supervisor: pick corporation first, then user -->
+            <UFormField label="Empresa supervisora">
+              <USelect v-model="supervisorCorpId"
+                :items="(refs?.corporations ?? []).map((c) => ({ label: c.name, value: c.id }))"
+                placeholder="— Empresa —" class="w-full" />
             </UFormField>
             <UFormField :label="F.fields.supervisor" :error="errors.supervisor || undefined">
-              <USelect v-model="supervisorId"
-                :items="(refs?.supervisors ?? []).map((u) => ({ label: u.fullName, value: u.id }))"
+              <USelect v-model="supervisorId" :disabled="!supervisorCorpId"
+                :items="supervisorsForCorp.map((u) => ({ label: u.fullName, value: u.id }))"
                 :placeholder="`— ${F.fields.supervisor} —`" class="w-full" />
-            </UFormField>
-            <UFormField :label="F.fields.financial">
-              <USelect v-model="financialId"
-                :items="(refs?.financials ?? []).map((u) => ({ label: u.fullName, value: u.id }))"
-                :placeholder="`— ${F.fields.financial} —`" class="w-full" />
             </UFormField>
           </div>
         </UCard>

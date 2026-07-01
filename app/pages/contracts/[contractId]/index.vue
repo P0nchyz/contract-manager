@@ -30,23 +30,23 @@ const { data, status, error, refresh } = await useAsyncData(
 
     const progress: PeriodProgress[] = []
     for (const est of estimates) {
-      const isPhysical  = est.status === 'approved' || est.status === 'paid'
+      const isPhysical = est.status === 'approved' || est.status === 'paid'
       const isFinancial = est.status === 'paid'
       if (!isPhysical) continue
       for (const li of est.lineItems) {
         progress.push({
-          conceptId:    String(li.conceptId),
-          periodIndex:  est.periodIndex - 1,
-          physicalQty:  li.inThisEstimate,
+          conceptId: String(li.conceptId),
+          periodIndex: est.periodIndex - 1,
+          physicalQty: li.inThisEstimate,
           financialQty: isFinancial ? li.inThisEstimate : 0,
         })
       }
     }
 
     const conceptMetas: ConceptMeta[] = concepts.map((c) => ({
-      conceptId:          String(c.id),
+      conceptId: String(c.id),
       contractedQuantity: c.contractedQuantity,
-      unitPrice:          c.unitPrice,
+      unitPrice: c.unitPrice,
     }))
 
     return {
@@ -55,7 +55,7 @@ const { data, status, error, refresh } = await useAsyncData(
       recentLogNotes: [...logNotes].sort((a, b) => b.folio - a.folio).slice(0, 5),
       recentEstimates: [...estimates].sort((a, b) => b.number - a.number).slice(0, 5),
       curve: schedule
-        ? buildScheduleCurve(periods, schedule.entries, conceptMetas, progress, curIdx)
+        ? buildScheduleCurve(periods, (schedule.entries ?? []), conceptMetas, progress, curIdx)
         : [],
     }
   },
@@ -99,14 +99,8 @@ const quickActions = computed<QuickAction[]>(() => {
     </template>
 
     <template #body>
-      <UAlert
-        v-if="error"
-        color="error"
-        variant="soft"
-        icon="i-lucide-alert-triangle"
-        :title="S.common.error"
-        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
-      />
+      <UAlert v-if="error" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="S.common.error"
+        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]" />
 
       <div v-else-if="status === 'pending'" class="grid gap-4 lg:grid-cols-12">
         <USkeleton class="h-56 lg:col-span-4 rounded-lg" />
@@ -121,27 +115,11 @@ const quickActions = computed<QuickAction[]>(() => {
         </div>
 
         <div class="grid gap-4 lg:grid-cols-12">
-          <ContractFinancialWidget
-            v-if="data.financials"
-            class="lg:col-span-4"
-            :financials="data.financials"
-          />
-          <ContractScheduleWidget
-            class="lg:col-span-8"
-            :points="data.curve"
-            :financials="data.financials"
-            :contract-id="contractId"
-          />
-          <ContractLogbookWidget
-            class="lg:col-span-7"
-            :notes="data.recentLogNotes"
-            :contract-id="contractId"
-          />
-          <ContractEstimatesWidget
-            class="lg:col-span-5"
-            :estimates="data.recentEstimates"
-            :contract-id="contractId"
-          />
+          <ContractFinancialWidget v-if="data.financials" class="lg:col-span-4" :financials="data.financials" />
+          <ContractScheduleWidget class="lg:col-span-8" :points="data.curve" :financials="data.financials"
+            :contract-id="contractId" />
+          <ContractLogbookWidget class="lg:col-span-7" :notes="data.recentLogNotes" :contract-id="contractId" />
+          <ContractEstimatesWidget class="lg:col-span-5" :estimates="data.recentEstimates" :contract-id="contractId" />
         </div>
       </div>
     </template>

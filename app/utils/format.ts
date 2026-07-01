@@ -55,6 +55,7 @@ export const agreementStatusDisplay: Record<AgreementStatus, StatusDisplay> = {
   submitted: { label: S.agreementStatus.submitted, color: 'neutral', variant: 'soft' },
   with_notes: { label: S.agreementStatus.with_notes, color: 'neutral', variant: 'solid' },
   rejected: { label: S.agreementStatus.rejected, color: 'error', variant: 'solid' },
+  pending_entity: { label: S.agreementStatus.pending_entity, color: 'warning', variant: 'soft' },
   approved: { label: S.agreementStatus.approved, color: 'success', variant: 'solid' },
 }
 

@@ -72,11 +72,14 @@ const canSign = computed(
     mySlot.value.status === 'pending',
 )
 const canReturn = computed(
-  () => st.value === 'submitted' && can('estimate:returnWithNotes'),
+  () => (st.value === 'submitted' || st.value === 'pending_entity') && can('estimate:returnWithNotes'),
 )
 const canReject = computed(() => st.value === 'submitted' && can('estimate:reject'))
+const canApproveAsEntity = computed(
+  () => st.value === 'pending_entity' && can('agreement:approve'),
+)
 const showReview = computed(() => canReturn.value || canReject.value)
-const hasBarAction = computed(() => canSubmit.value || canSign.value)
+const hasBarAction = computed(() => canSubmit.value || canSign.value || canApproveAsEntity.value)
 
 const latestNote = computed(() => {
   const rec = reception.value
@@ -136,6 +139,7 @@ async function initiateWithLogNote() {
 
 const submit = () => run(() => repos.reception.submit(reception.value!.id))
 const sign = () => run(() => repos.reception.sign(reception.value!.id))
+const approveAsEntity = () => run(() => repos.reception.approve(reception.value!.id))
 
 const reviewNote = ref('')
 const reviewError = ref<string | null>(null)
@@ -406,6 +410,15 @@ const reject = () => withNote(repos.reception.reject)
             @click="sign"
           >
             {{ R.actions.sign }}
+          </UButton>
+          <UButton
+            v-if="canApproveAsEntity"
+            color="success"
+            icon="i-lucide-check-circle"
+            :loading="busy"
+            @click="approveAsEntity"
+          >
+            Aprobar
           </UButton>
         </div>
       </div>
