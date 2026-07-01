@@ -24,14 +24,12 @@ const props = defineProps<{ notes: LogNote[]; contractId: string }>()
 
     <ul v-else class="divide-y divide-default">
       <li v-for="note in notes" :key="note.id">
-        <ULink
-          :to="`/contracts/${props.contractId}/logbook/${note.id}`"
-          class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-elevated/50 transition"
-        >
+        <ULink :to="`/contracts/${props.contractId}/logbook/${note.id}`"
+          class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-elevated/50 transition">
           <div class="min-w-0">
             <p class="font-medium truncate">{{ note.title }}</p>
             <p class="text-xs text-muted">
-              {{ S.contractDashboard.folio }} {{ note.folio }} · {{ formatDate(note.date) }}
+              {{ S.contractDashboard.folio }} {{ note.folio }} · {{ formatDate(note.createdAt) }}
             </p>
           </div>
           <SignatureChips :signatures="note.signatures" />

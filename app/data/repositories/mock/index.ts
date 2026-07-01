@@ -666,16 +666,75 @@ export function createMockRepositories(): Repositories {
       },
       async create(input: CreateLogNoteInput) {
         await delay()
-        const maxFolio = db.logNotes
-          .filter((n) => n.contractId === input.contractId)
-          .reduce((m, n) => Math.max(m, n.folio), 0)
+        const contractNotes = db.logNotes.filter((n) => n.contractId === input.contractId)
+        const maxFolio = contractNotes.reduce((m, n) => Math.max(m, n.folio), 0)
+        const nextFolio = maxFolio + 1
+        const isOpeningNote = input.category === 'apertura'
+
+        // --- Guards ---
+        // Opening note can only be created once
+        if (isOpeningNote && contractNotes.some((n) => n.isOpeningNote)) {
+          throw new RepositoryError(409, 'La nota de apertura ya existe para este contrato', 'already_exists')
+        }
+        // No other notes until opening note is signed by all three
+        if (!isOpeningNote) {
+          const opening = contractNotes.find((n) => n.isOpeningNote)
+          if (!opening) {
+            throw new RepositoryError(409, 'Debes crear y firmar la nota de apertura antes de agregar otras notas', 'opening_required')
+          }
+          if (!opening.locked) {
+            throw new RepositoryError(409, 'La nota de apertura debe ser firmada por los tres roles antes de agregar otras notas', 'opening_unsigned')
+          }
+        }
+
+        // --- Build fixed body for opening note ---
+        let fixedBody: string | null = null
+        if (isOpeningNote) {
+          const contract = db.contracts.find((c) => c.id === input.contractId)
+          const entity   = contract ? db.users.find((u) => u.id === contract.entityId) : null
+          const resident = contract ? db.users.find((u) => u.id === contract.residentId) : null
+          const superintendent = contract ? db.users.find((u) => u.id === contract.superintendentId) : null
+          const corp     = contract ? db.corporations.find((c) => c.id === contract.contractorCorporationId) : null
+          const now      = new Date()
+          const fmtDate  = (d: Date) => d.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })
+          const fmtMoney = (m: number) => (m / 100).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+
+          const anticipoAmt = contract ? Math.round(contract.amount * contract.anticipoPercentage / 100) : 0
+          const startDate   = contract ? new Date(contract.startDate) : now
+          const endDate     = contract ? new Date(contract.endDate)   : now
+          const plazo       = contract ? Math.round((endDate.getTime() - startDate.getTime()) / 86_400_000) : 0
+
+          fixedBody = `Con fecha de hoy, ${fmtDate(now)}, se declara formalmente abierta la Bitácora Electrónica y Seguimiento a Obra Pública (BESOP) de la presente obra, de conformidad con lo establecido en los Artículos 46 de la Ley de Obras Públicas y Servicios Relacionados con las Mismas, así como el 122, 123 y 124 de su Reglamento.
+
+Para efectos de dar constancia jurídica y técnica al desarrollo de los trabajos, se asientan los datos generales del contrato de obra base:
+
+• Contrato No.: ${contract?.code ?? '—'}
+• Obra: ${contract?.title ?? '—'}
+• Dependencia Convocante: ${entity?.fullName ?? '—'}
+• Contratista: ${corp?.name ?? '—'}
+• Monto Contractual: ${fmtMoney(contract?.amount ?? 0)} (antes de I.V.A.)
+• Monto del Anticipo (${contract?.anticipoPercentage ?? 0}%): ${fmtMoney(anticipoAmt)} (antes de I.V.A.)
+• Plazo de Ejecución: ${plazo} días naturales
+• Fecha de Inicio Contractual: ${fmtDate(startDate)}
+• Fecha de Término Contractual: ${fmtDate(endDate)}
+
+Se registran las personalidades técnicas autorizadas para actuar en este libro digital:
+
+• Por la Dependencia (Residente de Obra): ${resident?.fullName ?? '—'}${input.residentCedula ? ` (Cédula Prof. ${input.residentCedula})` : ''}
+• Por la Empresa Contratista (Superintendente): ${superintendent?.fullName ?? '—'}${input.superintendentCedula ? ` (Cédula Prof. ${input.superintendentCedula})` : ''}
+
+Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos realizados en este sistema, comprometiéndose a su revisión y firma diaria.`
+        }
+
         const note: LogNote = {
           id: genId('LN'),
           contractId: input.contractId,
-          folio: maxFolio + 1,
+          folio: nextFolio,
+          category: input.category,
           title: input.title,
-          date: input.date,
-          body: input.body,
+          fixedBody,
+          customBody: input.customBody,
+          isOpeningNote,
           authorId: currentUserId,
           signatures: pendingSignatures(),
           attachmentFileIds: input.attachmentFileIds ?? [],
@@ -1066,7 +1125,7 @@ export function createMockRepositories(): Repositories {
         if (db.users.some((u) => u.username === input.username)) {
           throw new RepositoryError(409, 'El nombre de usuario ya existe', 'username_taken')
         }
-        const user: User = { id: genId('U'), fullName: input.fullName, username: input.username, email: input.email ?? null, role: input.role, corporationId: input.corporationId ?? null, entityId: input.entityId ?? null, active: true }
+        const user: User = { id: genId('U'), fullName: input.fullName, username: input.username, email: input.email ?? null, role: input.role, corporationId: input.corporationId ?? null, entityId: input.entityId ?? null, cedula: input.cedula ?? null, active: true }
         db.users.push(user)
         save()
         if (input.password) db.passwords[user.id] = input.password

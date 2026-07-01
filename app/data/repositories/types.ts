@@ -24,6 +24,7 @@ import type {
   Folder,
   FolderId,
   LogNote,
+  LogNoteCategory,
   LogNoteId,
   ModificationAgreement,
   AgreementId,
@@ -154,9 +155,11 @@ export interface EstimateRepository {
 // --- Logbook ---------------------------------------------------------------
 export interface CreateLogNoteInput {
   contractId: ContractId
+  category: LogNoteCategory
   title: string
-  date: Date
-  body: string
+  customBody: string
+  residentCedula?: string
+  superintendentCedula?: string
   attachmentFileIds?: FileId[]
 }
 export interface LogNoteRepository {
@@ -261,6 +264,8 @@ export interface CreateUserInput {
   email: string | null
   role: Role
   corporationId: CorporationId | null
+  entityId?: UserId | null
+  cedula?: string | null
   password: string
 }
 export interface UserRepository {

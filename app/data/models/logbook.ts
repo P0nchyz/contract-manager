@@ -1,27 +1,44 @@
 // app/data/models/logbook.ts
-import type {
-  ContractId,
-  FileId,
-  LogNoteId,
-  Signature,
-  UserId,
-} from './common'
+import type { ContractId, LogNoteId, UserId } from './common'
+import type { FileId } from './files'
+import type { Signature } from './workflow'
 
-/**
- * A logbook entry (nota de bitácora). The logbook is chronological and
- * immutable: once created/signed it cannot be edited or deleted, and `folio`
- * is sequential per contract.
- */
+export type LogNoteCategory =
+  | 'apertura'          // Apertura de Bitácora — only for opening note
+  | 'inicio_trabajos'   // Inicio de Trabajos
+  | 'suspension'        // Suspensión de Trabajos
+  | 'reanudacion'       // Reanudación de Trabajos
+  | 'terminacion'       // Terminación de Trabajos
+  | 'cierre'            // Cierre de Bitácora — only for reception note
+  | 'estimaciones'      // Estimaciones / Conciliación de Volúmenes
+  | 'conceptos_extra'   // Conceptos Extraordinarios / Volúmenes Excedentes
+  | 'anticipos'         // Anticipos
+  | 'retenciones'       // Retenciones / Sanciones
+  | 'ordenes'           // Órdenes e Instrucciones
+  | 'calidad'           // Control de Calidad y Laboratorio
+  | 'planos'            // Planos y Especificaciones
+  | 'seguridad'         // Seguridad e Higiene
+  | 'personal'          // Designación / Cambio de Personal Técnico
+  | 'minutas'           // Minutas de Trabajo / Visitas de Supervisión
+
 export interface LogNote {
   id: LogNoteId
   contractId: ContractId
-  folio: number // sequential per contract
+  folio: number         // sequential per contract, starts at 1
+  category: LogNoteCategory
   title: string
-  date: Date
-  body: string
+  /**
+   * For the opening note: the system-generated fixed block (non-editable).
+   * null for all other notes.
+   */
+  fixedBody: string | null
+  /** Free-text body written by the author. */
+  customBody: string
+  /** True only for folio=1 (Apertura de Bitácora). */
+  isOpeningNote: boolean
   authorId: UserId
-  signatures: Signature[] // the chips = who has/hasn't signed
+  signatures: Signature[]
   attachmentFileIds: FileId[]
-  locked: boolean // true once immutable (signed)
-  createdAt: Date
+  locked: boolean       // true once all three roles have signed
+  createdAt: Date       // auto-set at creation; also serves as the note date
 }

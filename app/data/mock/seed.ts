@@ -20,6 +20,7 @@ import type {
   FiniquitoStatement,
   Folder,
   LogNote,
+  type LogNoteCategory,
   ModificationAgreement,
   ReceptionStatement,
   User,
@@ -36,12 +37,12 @@ export const corporations: Corporation[] = [
 ]
 
 export const users: User[] = [
-  { id: 'U-ADMIN', fullName: 'Ana Admin',                       username: 'admin',       email: 'admin@example.mx', role: 'admin',          corporationId: null,       entityId: null,    active: true },
-  { id: 'U-ENT',  fullName: 'Dirección General de Obra Pública', username: 'entidad',     email: 'ent@srob.gob.mx',  role: 'entity',         corporationId: null,       entityId: null,    active: true },
-  { id: 'U-RES',  fullName: 'Roberto Residente',                 username: 'rresidente',  email: 'rres@srob.gob.mx', role: 'resident',       corporationId: null,       entityId: 'U-ENT', active: true },
-  { id: 'U-SUP',  fullName: 'Susana Superintendente',            username: 'ssuper',      email: 'ssup@example.mx',  role: 'superintendent', corporationId: 'CORP-001', entityId: null,    active: true },
-  { id: 'U-SVR',  fullName: 'Sergio Supervisor',                 username: 'ssupervisor', email: 'ssvr@example.mx',  role: 'supervisor',     corporationId: 'CORP-002', entityId: null,    active: true },
-  { id: 'U-FIN',  fullName: 'Fabiola Financiera',                username: 'ffinanzas',   email: 'ffin@srob.gob.mx', role: 'financial',      corporationId: null,       entityId: 'U-ENT', active: true },
+  { id: 'U-ADMIN', fullName: 'Ana Admin',                       username: 'admin',       email: 'admin@example.mx', role: 'admin',          corporationId: null,       entityId: null,    cedula: null, active: true },
+  { id: 'U-ENT',  fullName: 'Dirección General de Obra Pública', username: 'entidad',     email: 'ent@srob.gob.mx',  role: 'entity',         corporationId: null,       entityId: null,    cedula: null, active: true },
+  { id: 'U-RES',  fullName: 'Roberto Residente',                 username: 'rresidente',  email: 'rres@srob.gob.mx', role: 'resident',       corporationId: null,       entityId: 'U-ENT', cedula: '1234567', active: true },
+  { id: 'U-SUP',  fullName: 'Susana Superintendente',            username: 'ssuper',      email: 'ssup@example.mx',  role: 'superintendent', corporationId: 'CORP-001', entityId: null,    cedula: '7654321', active: true },
+  { id: 'U-SVR',  fullName: 'Sergio Supervisor',                 username: 'ssupervisor', email: 'ssvr@example.mx',  role: 'supervisor',     corporationId: 'CORP-002', entityId: null,    cedula: null, active: true },
+  { id: 'U-FIN',  fullName: 'Fabiola Financiera',                username: 'ffinanzas',   email: 'ffin@srob.gob.mx', role: 'financial',      corporationId: null,       entityId: 'U-ENT', cedula: null, active: true },
 ]
 
 // --- Contract --------------------------------------------------------------
@@ -229,21 +230,67 @@ export const estimates: Estimate[] = [
 
 // --- Logbook (each signed by resident + superintendent + supervisor) -------
 export const logNotes: LogNote[] = [
-  { id: 'LN-237', contractId: 'CT-001', folio: 237, title: 'Inicio de levantamiento topográfico', date: d('2024-02-05'), body: 'Se inician trabajos de levantamiento en el polígono norte...', authorId: 'U-SUP', signatures: [
-    { id: 'LS-1', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-02-05'), status: 'signed' },
-    { id: 'LS-2', role: 'supervisor', userId: 'U-SVR', signedAt: d('2024-02-06'), status: 'signed' },
-    { id: 'LS-3', role: 'resident', userId: 'U-RES', signedAt: d('2024-02-06'), status: 'signed' },
-  ], attachmentFileIds: ['FILE-10'], locked: true, createdAt: d('2024-02-05') },
-  { id: 'LN-240', contractId: 'CT-001', folio: 240, title: 'Avance de modelado estructural', date: d('2024-03-20'), body: 'Avance del 40% en el modelado de la estructura principal...', authorId: 'U-SUP', signatures: [
-    { id: 'LS-4', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-03-20'), status: 'signed' },
-    { id: 'LS-5', role: 'supervisor', userId: null, signedAt: null, status: 'pending' },
-    { id: 'LS-6', role: 'resident', userId: null, signedAt: null, status: 'pending' },
-  ], attachmentFileIds: [], locked: false, createdAt: d('2024-03-20') },
-  { id: 'LN-241', contractId: 'CT-001', folio: 241, title: 'Entrega de capacitación módulo 1', date: d('2024-03-28'), body: 'Se impartió el primer curso de capacitación...', authorId: 'U-RES', signatures: [
-    { id: 'LS-7', role: 'resident', userId: 'U-RES', signedAt: d('2024-03-28'), status: 'signed' },
-    { id: 'LS-8', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-03-29'), status: 'signed' },
-    { id: 'LS-9', role: 'supervisor', userId: 'U-SVR', signedAt: d('2024-03-29'), status: 'signed' },
-  ], attachmentFileIds: [], locked: true, createdAt: d('2024-03-28') },
+  {
+    id: 'LN-001', contractId: 'CT-001', folio: 1, category: 'apertura' as LogNoteCategory,
+    title: 'Apertura de Bitácora',
+    fixedBody: `Con fecha de hoy, 15 de enero de 2024, se declara formalmente abierta la Bitácora Electrónica y Seguimiento a Obra Pública (BESOP) de la presente obra, de conformidad con lo establecido en los Artículos 46 de la Ley de Obras Públicas y Servicios Relacionados con las Mismas, así como el 122, 123 y 124 de su Reglamento.
+
+Para efectos de dar constancia jurídica y técnica al desarrollo de los trabajos, se asientan los datos generales del contrato de obra base:
+
+• Contrato No.: LPI-SRO-2024-014
+• Obra: Diseñar e instrumentar el modelo virtual AutoDesk
+• Dependencia Convocante: Dirección General de Obra Pública
+• Contratista: Constructora del Valle, S.A. de C.V.
+• Monto Contractual: $27,590,000.00 M.N. (antes de I.V.A.)
+• Monto del Anticipo (30%): $8,277,000.00 M.N. (antes de I.V.A.)
+• Plazo de Ejecución: 351 días naturales
+• Fecha de Inicio Contractual: 15 de enero de 2024
+• Fecha de Término Contractual: 31 de diciembre de 2024
+
+Se registran las personalidades técnicas autorizadas para actuar en este libro digital:
+
+• Por la Dependencia (Residente de Obra): Roberto Residente (Cédula Prof. 1234567)
+• Por la Empresa Contratista (Superintendente): Susana Superintendente (Cédula Prof. 7654321)
+
+Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos realizados en este sistema, comprometiéndose a su revisión y firma diaria.`,
+    customBody: '',
+    isOpeningNote: true,
+    authorId: 'U-RES',
+    signatures: [
+      { id: 'LS-1', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-01-15'), status: 'signed' },
+      { id: 'LS-2', role: 'supervisor',     userId: 'U-SVR', signedAt: d('2024-01-15'), status: 'signed' },
+      { id: 'LS-3', role: 'resident',       userId: 'U-RES', signedAt: d('2024-01-15'), status: 'signed' },
+    ],
+    attachmentFileIds: [], locked: true, createdAt: d('2024-01-15'),
+  },
+  {
+    id: 'LN-002', contractId: 'CT-001', folio: 2, category: 'inicio_trabajos' as LogNoteCategory,
+    title: 'Inicio de levantamiento topográfico',
+    fixedBody: null,
+    customBody: 'Se inician trabajos de levantamiento en el polígono norte. Condiciones del terreno favorables. Equipo completo en sitio.',
+    isOpeningNote: false,
+    authorId: 'U-SUP',
+    signatures: [
+      { id: 'LS-4', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-02-05'), status: 'signed' },
+      { id: 'LS-5', role: 'supervisor',     userId: 'U-SVR', signedAt: d('2024-02-06'), status: 'signed' },
+      { id: 'LS-6', role: 'resident',       userId: 'U-RES', signedAt: d('2024-02-06'), status: 'signed' },
+    ],
+    attachmentFileIds: ['FILE-10'], locked: true, createdAt: d('2024-02-05'),
+  },
+  {
+    id: 'LN-003', contractId: 'CT-001', folio: 3, category: 'estimaciones' as LogNoteCategory,
+    title: 'Avance de modelado estructural',
+    fixedBody: null,
+    customBody: 'Avance del 40% en el modelado de la estructura principal. Se presentan 3,000 m2 de modelado BIM para validación del supervisor.',
+    isOpeningNote: false,
+    authorId: 'U-SUP',
+    signatures: [
+      { id: 'LS-7', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-03-20'), status: 'signed' },
+      { id: 'LS-8', role: 'supervisor',     userId: null,    signedAt: null,             status: 'pending' },
+      { id: 'LS-9', role: 'resident',       userId: null,    signedAt: null,             status: 'pending' },
+    ],
+    attachmentFileIds: [], locked: false, createdAt: d('2024-03-20'),
+  },
 ]
 
 // --- Modification agreements ----------------------------------------------

@@ -116,9 +116,9 @@ async function initiateWithLogNote() {
     // 1. Create the closing log note.
     const note = await repos.logNotes.create({
       contractId: contractId.value,
+      category: 'cierre',
       title: logNoteTitle.value.trim(),
-      date: new Date(`${logNoteDate.value}T12:00:00`),
-      body: logNoteBody.value.trim(),
+      customBody: logNoteBody.value.trim(),
     })
     // 2. Initiate the reception record.
     const rec = await repos.reception.initiate(contractId.value)
@@ -159,33 +159,18 @@ const reject = () => withNote(repos.reception.reject)
     <template #header>
       <UDashboardNavbar :title="R.title">
         <template #leading>
-          <UButton
-            icon="i-lucide-arrow-left"
-            color="neutral"
-            variant="ghost"
-            :to="`/contracts/${contractId}/contract`"
-            :aria-label="S.common.back"
-          />
+          <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" :to="`/contracts/${contractId}/contract`"
+            :aria-label="S.common.back" />
         </template>
         <template #right>
-          <StatusBadge
-            v-if="reception"
-            :display="agreementStatusDisplay[reception.status]"
-            size="md"
-          />
+          <StatusBadge v-if="reception" :display="agreementStatusDisplay[reception.status]" size="md" />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <UAlert
-        v-if="error"
-        color="error"
-        variant="soft"
-        icon="i-lucide-alert-triangle"
-        :title="S.common.error"
-        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
-      />
+      <UAlert v-if="error" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="S.common.error"
+        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]" />
 
       <div v-else-if="status === 'pending'" class="space-y-4">
         <USkeleton class="h-40 w-full rounded-lg" />
@@ -193,13 +178,7 @@ const reject = () => withNote(repos.reception.reject)
 
       <!-- Step 1: Log note (before reception exists, resident only) -->
       <div v-else-if="step === 'logNote'" class="space-y-6">
-        <UAlert
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-notebook-pen"
-          :title="R.logNoteStep.hint"
-          class="mb-4"
-        />
+        <UAlert color="neutral" variant="soft" icon="i-lucide-notebook-pen" :title="R.logNoteStep.hint" class="mb-4" />
 
         <UCard class="max-w-2xl">
           <template #header>
@@ -211,11 +190,7 @@ const reject = () => withNote(repos.reception.reject)
 
           <div class="space-y-4">
             <UFormField :label="R.logNoteStep.titleLabel" :error="logNoteErrors.title || undefined">
-              <UInput
-                v-model="logNoteTitle"
-                class="w-full"
-                :placeholder="R.logNoteStep.titlePlaceholder"
-              />
+              <UInput v-model="logNoteTitle" class="w-full" :placeholder="R.logNoteStep.titlePlaceholder" />
             </UFormField>
 
             <UFormField :label="R.logNoteStep.dateLabel" :error="logNoteErrors.date || undefined">
@@ -223,40 +198,20 @@ const reject = () => withNote(repos.reception.reject)
             </UFormField>
 
             <UFormField :label="R.logNoteStep.bodyLabel" :error="logNoteErrors.body || undefined">
-              <UTextarea
-                v-model="logNoteBody"
-                :rows="5"
-                class="w-full"
-                :placeholder="R.logNoteStep.bodyPlaceholder"
-              />
+              <UTextarea v-model="logNoteBody" :rows="5" class="w-full" :placeholder="R.logNoteStep.bodyPlaceholder" />
             </UFormField>
           </div>
         </UCard>
 
-        <UAlert
-          v-if="actionError"
-          :title="actionError"
-          color="error"
-          variant="soft"
-          icon="i-lucide-alert-triangle"
-          class="mt-4"
-        />
+        <UAlert v-if="actionError" :title="actionError" color="error" variant="soft" icon="i-lucide-alert-triangle"
+          class="mt-4" />
 
         <div
-          class="sticky bottom-0 -mx-4 mt-4 flex justify-end gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
-        >
-          <UButton
-            color="neutral"
-            variant="ghost"
-            :to="`/contracts/${contractId}/contract`"
-          >
+          class="sticky bottom-0 -mx-4 mt-4 flex justify-end gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+          <UButton color="neutral" variant="ghost" :to="`/contracts/${contractId}/contract`">
             {{ S.common.cancel }}
           </UButton>
-          <UButton
-            icon="i-lucide-arrow-right"
-            :loading="busy"
-            @click="initiateWithLogNote"
-          >
+          <UButton icon="i-lucide-arrow-right" :loading="busy" @click="initiateWithLogNote">
             {{ R.logNoteStep.create }}
           </UButton>
         </div>
@@ -265,14 +220,10 @@ const reject = () => withNote(repos.reception.reject)
       <!-- Step 2 / view: reception workflow -->
       <div v-else-if="step === 'flow' && reception" class="space-y-6">
         <!-- Banner -->
-        <UAlert
-          v-if="latestNote"
-          :color="reception.status === 'rejected' ? 'error' : 'warning'"
-          variant="soft"
+        <UAlert v-if="latestNote" :color="reception.status === 'rejected' ? 'error' : 'warning'" variant="soft"
           icon="i-lucide-message-square-warning"
           :title="reception.status === 'rejected' ? R.banner.rejected : R.banner.withNotes"
-          :description="latestNote.note"
-        />
+          :description="latestNote.note" />
 
         <!-- Inline review -->
         <UCard v-if="showReview">
@@ -283,32 +234,15 @@ const reject = () => withNote(repos.reception.reject)
             </div>
           </template>
           <UFormField :label="R.note.label" :error="reviewError || undefined">
-            <UTextarea
-              v-model="reviewNote"
-              :rows="3"
-              class="w-full"
-              :placeholder="R.note.placeholder"
-            />
+            <UTextarea v-model="reviewNote" :rows="3" class="w-full" :placeholder="R.note.placeholder" />
           </UFormField>
           <div class="mt-3 flex flex-wrap justify-end gap-3">
-            <UButton
-              v-if="canReject"
-              color="error"
-              variant="soft"
-              icon="i-lucide-x-circle"
-              :disabled="busy"
-              @click="reject"
-            >
+            <UButton v-if="canReject" color="error" variant="soft" icon="i-lucide-x-circle" :disabled="busy"
+              @click="reject">
               {{ R.actions.reject }}
             </UButton>
-            <UButton
-              v-if="canReturn"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-corner-up-left"
-              :disabled="busy"
-              @click="returnWithNotes"
-            >
+            <UButton v-if="canReturn" color="warning" variant="soft" icon="i-lucide-corner-up-left" :disabled="busy"
+              @click="returnWithNotes">
               {{ R.actions.returnWithNotes }}
             </UButton>
           </div>
@@ -324,17 +258,10 @@ const reject = () => withNote(repos.reception.reject)
               </div>
             </template>
             <ul class="divide-y divide-default">
-              <li
-                v-for="s in reception.signatures"
-                :key="s.id"
-                class="flex items-center justify-between py-2.5"
-              >
+              <li v-for="s in reception.signatures" :key="s.id" class="flex items-center justify-between py-2.5">
                 <div class="flex items-center gap-3">
-                  <UIcon
-                    :name="s.status === 'signed' ? 'i-lucide-badge-check' : 'i-lucide-circle-dashed'"
-                    class="size-4"
-                    :class="s.status === 'signed' ? 'text-success' : 'text-muted'"
-                  />
+                  <UIcon :name="s.status === 'signed' ? 'i-lucide-badge-check' : 'i-lucide-circle-dashed'"
+                    class="size-4" :class="s.status === 'signed' ? 'text-success' : 'text-muted'" />
                   <div>
                     <div class="text-sm font-medium text-highlighted">{{ S.roles[s.role] }}</div>
                     <div class="text-xs text-muted">
@@ -346,14 +273,10 @@ const reject = () => withNote(repos.reception.reject)
                     </div>
                   </div>
                 </div>
-                <UBadge
-                  :label="s.status === 'signed'
-                    ? S.estimateDetail.signatures.signed
-                    : S.estimateDetail.signatures.pending"
-                  :color="s.status === 'signed' ? 'success' : 'neutral'"
-                  :variant="s.status === 'signed' ? 'soft' : 'outline'"
-                  size="sm"
-                />
+                <UBadge :label="s.status === 'signed'
+                  ? S.estimateDetail.signatures.signed
+                  : S.estimateDetail.signatures.pending" :color="s.status === 'signed' ? 'success' : 'neutral'"
+                  :variant="s.status === 'signed' ? 'soft' : 'outline'" size="sm" />
               </li>
             </ul>
           </UCard>
@@ -367,19 +290,14 @@ const reject = () => withNote(repos.reception.reject)
             </template>
             <ol class="relative space-y-4 border-s border-default ps-5">
               <li v-for="ev in [...reception.history].reverse()" :key="ev.id" class="relative">
-                <span
-                  class="absolute -start-[1.4rem] top-1 size-2.5 rounded-full bg-muted ring-4 ring-default"
-                />
+                <span class="absolute -start-[1.4rem] top-1 size-2.5 rounded-full bg-muted ring-4 ring-default" />
                 <div class="text-sm font-medium text-highlighted">
                   {{ S.workflow[ev.action] }}
                 </div>
                 <div class="text-xs text-muted">
                   {{ userName(ev.byUserId) }} · {{ formatDate(ev.at) }}
                 </div>
-                <p
-                  v-if="ev.note"
-                  class="mt-1 rounded-md bg-elevated/60 px-2 py-1 text-xs text-default"
-                >
+                <p v-if="ev.note" class="mt-1 rounded-md bg-elevated/60 px-2 py-1 text-xs text-default">
                   {{ ev.note }}
                 </p>
               </li>
@@ -387,37 +305,18 @@ const reject = () => withNote(repos.reception.reject)
           </UCard>
         </div>
 
-        <UAlert
-          v-if="actionError"
-          :title="actionError"
-          color="error"
-          variant="soft"
-          icon="i-lucide-alert-triangle"
-        />
+        <UAlert v-if="actionError" :title="actionError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
 
-        <div
-          v-if="hasBarAction"
-          class="sticky bottom-0 -mx-4 mt-2 flex justify-end gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
-        >
+        <div v-if="hasBarAction"
+          class="sticky bottom-0 -mx-4 mt-2 flex justify-end gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
           <UButton v-if="canSubmit" icon="i-lucide-send" :loading="busy" @click="submit">
             {{ R.actions.submit }}
           </UButton>
-          <UButton
-            v-if="canSign"
-            color="success"
-            icon="i-lucide-pen-line"
-            :loading="busy"
-            @click="sign"
-          >
+          <UButton v-if="canSign" color="success" icon="i-lucide-pen-line" :loading="busy" @click="sign">
             {{ R.actions.sign }}
           </UButton>
-          <UButton
-            v-if="canApproveAsEntity"
-            color="success"
-            icon="i-lucide-check-circle"
-            :loading="busy"
-            @click="approveAsEntity"
-          >
+          <UButton v-if="canApproveAsEntity" color="success" icon="i-lucide-check-circle" :loading="busy"
+            @click="approveAsEntity">
             Aprobar
           </UButton>
         </div>
@@ -425,9 +324,7 @@ const reject = () => withNote(repos.reception.reject)
 
       <!-- Non-initiating roles when no reception yet -->
       <div v-else-if="!reception" class="space-y-6">
-        <div
-          class="rounded-lg border border-dashed border-default py-16 text-center text-sm text-muted"
-        >
+        <div class="rounded-lg border border-dashed border-default py-16 text-center text-sm text-muted">
           {{ S.contractInfo.closing.notStarted }}
         </div>
       </div>

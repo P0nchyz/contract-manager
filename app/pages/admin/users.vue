@@ -50,6 +50,7 @@ const userRole = ref<Role | null>(null)
 const userCorpId = ref<string | null>(null)
 const userEntityId = ref<string | null>(null)
 const userSaving = ref(false)
+const userCedula = ref('')
 const userError = ref<string | null>(null)
 
 const userErrors = computed(() => ({
@@ -74,6 +75,7 @@ function openUserForm() {
   userRole.value = null
   userCorpId.value = null
   userEntityId.value = null
+  userCedula.value = ''
   userError.value = null
   showUserForm.value = true
 }
@@ -91,6 +93,7 @@ async function createUser() {
       role: userRole.value,
       corporationId: (userRole.value === 'superintendent' || userRole.value === 'supervisor') ? userCorpId.value : null,
       entityId: (userRole.value === 'resident' || userRole.value === 'financial') ? userEntityId.value : null,
+      cedula: userCedula.value.trim() || null,
     })
     showUserForm.value = false
     await refresh()
@@ -331,6 +334,10 @@ async function createCorporation() {
               <USelect v-model="userEntityId"
                 :items="(data?.users ?? []).filter(u => u.role === 'entity').map((u) => ({ label: u.fullName, value: u.id }))"
                 :placeholder="`— ${A.users.form.entity} —`" class="w-full" />
+            </UFormField>
+
+            <UFormField :label="A.users.form.cedula">
+              <UInput v-model="userCedula" class="w-full" :placeholder="A.users.form.cedulaPlaceholder" />
             </UFormField>
 
             <UAlert v-if="userError" :title="userError" color="error" variant="soft" icon="i-lucide-alert-triangle" />

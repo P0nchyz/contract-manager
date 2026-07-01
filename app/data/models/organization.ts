@@ -26,5 +26,7 @@ export interface User {
   corporationId: CorporationId | null
   // Required when role === 'resident' or 'financial': the entity they belong to.
   entityId: UserId | null
+  /** Número de cédula profesional — required for resident and superintendent in log notes. */
+  cedula: string | null
   active: boolean
 }

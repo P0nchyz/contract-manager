@@ -623,7 +623,7 @@ const sections = [
               <div v-if="!data.logNotes.length" class="text-sm text-muted">{{ F.attachments.logNotesEmpty }}</div>
               <div v-else class="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-default p-2">
                 <UCheckbox v-for="n in data.logNotes" :key="n.id" :model-value="selectedLogNotes.includes(n.id)"
-                  :label="`#${n.folio} · ${n.title}`" :description="formatDate(n.date)"
+                  :label="`#${n.folio} · ${n.title}`" :description="formatDate(n.createdAt)"
                   class="rounded-md px-2 py-1.5 hover:bg-elevated"
                   @update:model-value="() => toggle(selectedLogNotes, n.id)" />
               </div>
