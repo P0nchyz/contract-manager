@@ -46,19 +46,13 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 
     <UForm :schema="schema" :state="state" class="space-y-4" @submit="onSubmit">
       <UFormField :label="S.login.username" name="username">
-        <UInput v-model="state.username" autocomplete="username" class="w-full" />
+        <UInput v-model="state.username" autocomplete="username" class="w-full" spellcheck="false" />
       </UFormField>
       <UFormField :label="S.login.password" name="password">
         <UInput v-model="state.password" type="password" autocomplete="current-password" class="w-full" />
       </UFormField>
 
-      <UAlert
-        v-if="errorMsg"
-        :title="errorMsg"
-        color="error"
-        variant="soft"
-        icon="i-lucide-alert-triangle"
-      />
+      <UAlert v-if="errorMsg" :title="errorMsg" color="error" variant="soft" icon="i-lucide-alert-triangle" />
 
       <UButton type="submit" :loading="loading" block>{{ S.login.submit }}</UButton>
     </UForm>
