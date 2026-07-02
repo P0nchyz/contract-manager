@@ -202,22 +202,21 @@ const scheduleValid = computed(() =>
   conceptTotals.value.some((t) => t > 0),
 )
 
-// Gantt: one row per concept, spanning from first to last non-zero period
+// Gantt: one row per concept, only the periods where it actually has planned volume
 const ganttRows = computed(() =>
   concepts.value.map((c, ci) => {
     const row = scheduleGrid.value[ci] ?? []
-    const first = row.findIndex((v) => (parseFloat(v) || 0) > 0)
-    const last = [...row].reverse().findIndex((v) => (parseFloat(v) || 0) > 0)
-    const lastIdx = last >= 0 ? row.length - 1 - last : -1
+    const periods = row
+      .map((v, pi) => ((parseFloat(v) || 0) > 0 ? pi : -1))
+      .filter((pi) => pi >= 0)
     const amount = Math.round((parseFloat(c._priceRaw) || 0) * 100) *
       (parseFloat(c._qtyRaw) || 0)
     return {
       label: c.description || `Concepto ${ci + 1}`,
-      startDate: first >= 0 ? derivedPeriods.value[first]?.start ?? null : null,
-      endDate: lastIdx >= 0 ? derivedPeriods.value[lastIdx]?.end ?? null : null,
+      periods,
       amount,
     }
-  }).filter((r) => r.startDate),
+  }).filter((r) => r.periods.length > 0),
 )
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -655,11 +654,13 @@ const sections = [
               {{ derivedPeriods[activePeriodTab].start.toLocaleDateString('es-MX', {
                 day: '2-digit', month: 'long',
                 year:
-              'numeric' }) }}
+                  'numeric'
+              }) }}
               –
               {{ derivedPeriods[activePeriodTab].end.toLocaleDateString('es-MX', {
                 day: '2-digit', month: 'long', year:
-              'numeric' }) }}
+                  'numeric'
+              }) }}
             </div>
 
             <!-- Grouped by section ─────────────────────────────────────────── -->
@@ -738,8 +739,8 @@ const sections = [
           <!-- Gantt preview ───────────────────────────────────────────────── -->
           <div v-if="ganttRows.length" class="border-t border-default px-4 py-4">
             <p class="mb-3 text-sm font-medium text-default">{{ F.schedule.ganttTitle }}</p>
-            <GanttChart :rows="ganttRows" :contract-start="new Date(`${startDate}T12:00:00`)"
-              :contract-end="new Date(`${endDate}T12:00:00`)" :height="Math.max(160, ganttRows.length * 36 + 60)" />
+            <GanttChart :rows="ganttRows" :period-count="derivedPeriods.length"
+              :height="Math.max(160, ganttRows.length * 36 + 60)" />
           </div>
         </UCard>
 
@@ -798,9 +799,9 @@ const sections = [
                 : entry.status === 'error' ? 'i-lucide-alert-circle'
                   : entry.status === 'uploading' ? 'i-lucide-loader-circle'
                     : 'i-lucide-file'" class="size-4 shrink-0" :class="entry.status === 'done' ? 'text-success'
-                        : entry.status === 'error' ? 'text-error'
-                          : entry.status === 'uploading' ? 'text-primary animate-spin'
-                            : 'text-muted'" />
+                      : entry.status === 'error' ? 'text-error'
+                        : entry.status === 'uploading' ? 'text-primary animate-spin'
+                          : 'text-muted'" />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center justify-between gap-2">
                   <span class="truncate text-sm text-highlighted">{{ entry.file.name }}</span>

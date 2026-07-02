@@ -10,7 +10,8 @@ import {
   type PeriodProgress,
   type ConceptGanttStatus,
 } from '~/data/calc/schedule'
-import type { GanttEntry } from '~/components/ScheduleGantt.client.vue'
+import type { GanttEntry, GanttCell } from '~/components/ScheduleGantt.client.vue'
+import { groupConceptsBySections } from '~/composables/useConceptSections'
 
 definePageMeta({ requiredPermission: 'estimate:view' })
 
@@ -23,11 +24,12 @@ const contractId = computed(() => route.params.contractId as string)
 const { data, status, error, refresh } = await useAsyncData(
   () => `schedule-${contractId.value}`,
   async () => {
-    const [contract, schedule, estimates, concepts] = await Promise.all([
+    const [contract, schedule, estimates, concepts, sections] = await Promise.all([
       repos.contracts.getById(contractId.value),
       repos.schedule.getByContract(contractId.value),
       repos.estimates.listByContract(contractId.value),
       repos.concepts.listByContract(contractId.value),
+      repos.concepts.listSectionsByContract(contractId.value),
     ])
 
     const periodicity = contract.estimatePeriodicity ?? 'monthly'
@@ -60,26 +62,45 @@ const { data, status, error, refresh } = await useAsyncData(
     const statuses = computeConceptStatuses((schedule.entries ?? []), conceptMetas, progress, curIdx)
     const statusMap = Object.fromEntries(statuses.map((s) => [s.conceptId, s]))
 
-    // Build Gantt entries: first to last active period per concept
+    // Per-concept, per-period planned and actual (physical) quantity lookups —
+    // reused by both the Gantt (disconnected cells) and the read-only
+    // "actual schedule per period" section below.
+    const plannedByConceptPeriod: Record<string, Record<number, number>> = {}
+    for (const e of schedule.entries ?? []) {
+      const cid = String(e.conceptId)
+      if (!plannedByConceptPeriod[cid]) plannedByConceptPeriod[cid] = {}
+      plannedByConceptPeriod[cid][e.periodIndex] = (plannedByConceptPeriod[cid][e.periodIndex] ?? 0) + e.plannedQuantity
+    }
+    const actualByConceptPeriod: Record<string, Record<number, number>> = {}
+    for (const p of progress) {
+      if (!actualByConceptPeriod[p.conceptId]) actualByConceptPeriod[p.conceptId] = {}
+      actualByConceptPeriod[p.conceptId][p.periodIndex] = (actualByConceptPeriod[p.conceptId][p.periodIndex] ?? 0) + p.physicalQty
+    }
+
+    // Build Gantt entries: only the periods where the concept actually has
+    // planned volume become a visible cell — everything else is a gap.
     const ganttEntries: GanttEntry[] = concepts.map((c) => {
       const cid = String(c.id)
-      const cEntries = schedule.entries.filter((e) => String(e.conceptId) === cid && e.plannedQuantity > 0)
-      const first = cEntries.length > 0 ? Math.min(...cEntries.map((e) => e.periodIndex)) : -1
-      const last = cEntries.length > 0 ? Math.max(...cEntries.map((e) => e.periodIndex)) : -1
+      const cells: GanttCell[] = (schedule.entries ?? [])
+        .filter((e) => String(e.conceptId) === cid && e.plannedQuantity > 0)
+        .map((e) => ({
+          periodIndex: e.periodIndex,
+          plannedQuantity: plannedByConceptPeriod[cid]?.[e.periodIndex] ?? e.plannedQuantity,
+          actualQuantity: actualByConceptPeriod[cid]?.[e.periodIndex] ?? 0,
+        }))
       return {
         conceptId: cid,
         label: c.description,
-        startDate: first >= 0 ? new Date(periods[first].start) : new Date(contract.startDate),
-        endDate: last >= 0 ? new Date(periods[last].end) : new Date(contract.endDate),
-        programmedAmount: c.unitPrice * c.contractedQuantity,
-        status: statusMap[cid] ?? {
-          conceptId: cid, status: 'future' as const,
-          plannedProgress: 0, actualProgress: 0, delta: 0, activePeriods: [],
-        },
+        cells,
       }
     })
 
-    return { contract, schedule, curve, ganttEntries, statuses, conceptMetas, progress, periodicity, periods, curIdx }
+    const groups = groupConceptsBySections(sections, concepts)
+
+    return {
+      contract, schedule, curve, ganttEntries, statuses, conceptMetas, progress,
+      periodicity, periods, curIdx, groups, plannedByConceptPeriod, actualByConceptPeriod,
+    }
   },
 )
 
@@ -113,6 +134,32 @@ function statusColor(s: ConceptGanttStatus['status']): 'success' | 'error' | 'wa
 const ganttHeight = computed(() =>
   Math.max(240, (data.value?.ganttEntries.length ?? 0) * 42 + 60),
 )
+
+// Per-concept detail table rows: gantt entry (label + cells) joined with its
+// overall status, plus first/last active period for display.
+const detailRows = computed(() => {
+  if (!data.value) return []
+  const statusMap = Object.fromEntries(data.value.statuses.map((s) => [s.conceptId, s]))
+  return data.value.ganttEntries.map((entry) => {
+    const periodIdxs = entry.cells.map((c) => c.periodIndex).sort((a, b) => a - b)
+    return {
+      ...entry,
+      status: statusMap[entry.conceptId] ?? {
+        conceptId: entry.conceptId, status: 'future' as const,
+        plannedProgress: 0, actualProgress: 0, delta: 0, activePeriods: [],
+      },
+      firstPeriodLabel: periodIdxs.length ? `P${periodIdxs[0] + 1}` : '—',
+      lastPeriodLabel: periodIdxs.length ? `P${periodIdxs[periodIdxs.length - 1] + 1}` : '—',
+    }
+  })
+})
+
+// Active period tab for the "actual schedule per period" section — defaults
+// to the contract's current period once the data loads.
+const activePeriodTab = ref(0)
+watch(data, (d) => {
+  if (d) activePeriodTab.value = Math.min(d.curIdx, Math.max(0, d.periods.length - 1))
+}, { immediate: true })
 </script>
 
 <template>
@@ -204,32 +251,108 @@ const ganttHeight = computed(() =>
                   <span class="size-2.5 rounded-sm bg-[#3b82f6]" />{{ SP.gantt.legend.done }}
                 </span>
                 <span class="flex items-center gap-1.5">
-                  <span class="size-2.5 rounded-sm bg-[#1f2937]" />{{ SP.gantt.legend.executed }}
+                  <span class="size-2.5 rounded-sm bg-[#f59e0b]" />{{ SP.gantt.legend.partial }}
                 </span>
                 <span class="flex items-center gap-1.5">
-                  <span class="size-2.5 rounded-sm bg-[#22c55e] opacity-70" />{{ SP.gantt.legend.ahead }}
+                  <span class="size-2.5 rounded-sm bg-[#ef4444]" />{{ SP.gantt.legend.missed }}
                 </span>
                 <span class="flex items-center gap-1.5">
-                  <span class="size-2.5 rounded-sm bg-[#ef4444] opacity-70" />{{ SP.gantt.legend.behind }}
+                  <span class="size-2.5 rounded-sm bg-[#6b7280] opacity-30" />{{ SP.gantt.legend.pending }}
                 </span>
                 <span class="flex items-center gap-1.5">
-                  <span class="size-2.5 rounded-sm bg-[#6b7280] opacity-30 border border-[#6b7280]" />{{
-                    SP.gantt.legend.remaining }}
-                </span>
-                <span class="flex items-center gap-1.5">
-                  <span class="inline-block h-2 w-4 border-b-2 border-dashed border-amber-400" />{{ SP.gantt.today }}
+                  <span class="size-2.5 rounded-sm bg-[#6b7280] opacity-10 border border-[#6b7280]" />{{
+                    SP.gantt.legend.scheduled }}
                 </span>
               </div>
             </div>
           </template>
 
           <div class="px-4 py-4">
-            <ScheduleGantt :entries="data.ganttEntries" :contract-start="new Date(data.contract.startDate)"
-              :contract-end="new Date(data.contract.endDate)" :periodicity="data.periodicity" :height="ganttHeight" />
+            <ScheduleGantt :entries="data.ganttEntries" :periods="data.periods" :current-period-index="data.curIdx"
+              :height="ganttHeight" />
           </div>
         </UCard>
 
-        <!-- ③ S-curve -->
+        <!-- ③ Programa real por periodo (read-only, mirrors the schedule-input UI) -->
+        <UCard :ui="{ body: 'p-0 sm:p-0' }">
+          <template #header>
+            <div class="flex items-center gap-2 font-medium">
+              <UIcon name="i-lucide-calendar-range" class="size-4 text-muted" />
+              {{ SP.actualSchedule.title }}
+            </div>
+          </template>
+
+          <p class="border-b border-default px-4 py-2 text-xs text-muted">{{ SP.actualSchedule.hint }}</p>
+
+          <!-- Period tabs -->
+          <div class="flex overflow-x-auto border-b border-default bg-elevated/30">
+            <button v-for="(period, pi) in data.periods" :key="pi"
+              class="shrink-0 border-b-2 px-4 py-2 text-sm transition-colors" :class="activePeriodTab === pi
+                ? 'border-primary font-semibold text-primary'
+                : 'border-transparent text-muted hover:text-default'" @click="activePeriodTab = pi">
+              <span class="font-semibold">P{{ pi + 1 }}</span>
+              <span v-if="pi === data.curIdx" class="ml-1 text-amber-500">●</span>
+              <span class="ml-1.5 text-[11px] font-normal opacity-70">
+                {{ new Date(period.end).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) }}
+              </span>
+            </button>
+          </div>
+
+          <!-- Active period detail -->
+          <div v-if="data.periods[activePeriodTab]" class="px-4 py-3">
+            <div class="mb-3 text-xs text-muted">
+              {{ new Date(data.periods[activePeriodTab].start).toLocaleDateString('es-MX', {
+                day: '2-digit', month: 'long', year: 'numeric'
+              }) }}
+              –
+              {{ new Date(data.periods[activePeriodTab].end).toLocaleDateString('es-MX', {
+                day: '2-digit', month: 'long', year: 'numeric'
+              }) }}
+            </div>
+
+            <div class="space-y-4">
+              <div v-for="(group, gi) in data.groups" :key="gi">
+                <div class="mb-1.5 flex items-center gap-2">
+                  <span v-if="group.section" class="font-mono text-xs font-semibold text-muted">
+                    {{ group.section.specificationNumber }}
+                  </span>
+                  <span class="text-sm font-semibold text-highlighted">
+                    {{ group.section ? group.section.description : SP.actualSchedule.noSection }}
+                  </span>
+                </div>
+                <div class="space-y-1">
+                  <div v-for="c in group.concepts" :key="c.id" class="flex items-center gap-3">
+                    <div class="min-w-0 flex-1">
+                      <span class="font-mono text-xs text-muted">{{ c.specificationNumber }}</span>
+                      <span class="ml-2 text-sm text-highlighted">{{ c.description }}</span>
+                      <span class="ml-1 text-xs text-muted">({{ c.unit }})</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0 text-xs tabular-nums">
+                      <template v-if="(data.plannedByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0) > 0">
+                        <span class="font-medium" :class="(data.actualByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0) >=
+                            (data.plannedByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0)
+                            ? 'text-success'
+                            : activePeriodTab < data.curIdx ? 'text-error' : 'text-highlighted'
+                          ">
+                          {{ (data.actualByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0).toLocaleString('es-MX')
+                          }}
+                        </span>
+                        <span class="text-muted">
+                          / {{ (data.plannedByConceptPeriod[String(c.id)]?.[activePeriodTab] ??
+                            0).toLocaleString('es-MX') }}
+                          {{ c.unit }}
+                        </span>
+                      </template>
+                      <span v-else class="text-muted italic" :title="SP.actualSchedule.empty">—</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </UCard>
+
+        <!-- ④ S-curve -->
         <UCard>
           <template #header>
             <div class="flex items-center gap-2 font-medium">
@@ -241,7 +364,7 @@ const ganttHeight = computed(() =>
           <p v-else class="text-sm text-muted">{{ S.common.empty }}</p>
         </UCard>
 
-        <!-- ④ Per-concept detail table -->
+        <!-- ⑤ Per-concept detail table -->
         <UCard :ui="{ body: 'p-0 sm:p-0' }">
           <template #header>
             <div class="flex items-center gap-2 font-medium">
@@ -263,10 +386,10 @@ const ganttHeight = computed(() =>
                 </tr>
               </thead>
               <tbody class="divide-y divide-default">
-                <tr v-for="entry in data.ganttEntries" :key="entry.conceptId">
+                <tr v-for="entry in detailRows" :key="entry.conceptId">
                   <td class="px-4 py-2.5 font-medium text-highlighted">{{ entry.label }}</td>
-                  <td class="px-4 py-2.5 text-center text-muted">{{ formatDate(entry.startDate) }}</td>
-                  <td class="px-4 py-2.5 text-center text-muted">{{ formatDate(entry.endDate) }}</td>
+                  <td class="px-4 py-2.5 text-center text-muted">{{ entry.firstPeriodLabel }}</td>
+                  <td class="px-4 py-2.5 text-center text-muted">{{ entry.lastPeriodLabel }}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums text-muted">
                     {{ entry.status.plannedProgress.toFixed(1) }}%
                   </td>

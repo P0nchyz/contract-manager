@@ -11,12 +11,14 @@ const props = withDefaults(defineProps<{ points: SchedulePoint[]; height?: numbe
 
 const colors = useChartColors()
 
+// Prepend a synthetic origin point (contract start, 0%) so every series
+// visibly starts at zero instead of jumping straight to period 1's value.
 const chartData = computed<ChartData<'line'>>(() => ({
-  labels: props.points.map((p) => `P${p.periodIndex + 1}`),
+  labels: ['Inicio', ...props.points.map((p) => `P${p.periodIndex + 1}`)],
   datasets: [
     {
       label: S.contractDashboard.programmed,
-      data: props.points.map((p) => p.programmedCumulativePercentage),
+      data: [0, ...props.points.map((p) => p.programmedCumulativePercentage)],
       borderColor: colors.muted,
       borderDash: [6, 4],
       borderWidth: 2,
@@ -26,7 +28,7 @@ const chartData = computed<ChartData<'line'>>(() => ({
     },
     {
       label: S.contractDashboard.physical ?? 'Avance físico',
-      data: props.points.map((p) => p.actualCumulativePercentage),
+      data: [0, ...props.points.map((p) => p.actualCumulativePercentage)],
       borderColor: colors.primary,
       borderWidth: 2.5,
       pointRadius: 0,
@@ -36,7 +38,7 @@ const chartData = computed<ChartData<'line'>>(() => ({
     },
     {
       label: S.contractDashboard.financial ?? 'Avance financiero',
-      data: props.points.map((p) => p.financialCumulativePercentage),
+      data: [0, ...props.points.map((p) => p.financialCumulativePercentage)],
       borderColor: colors.success,
       borderWidth: 2,
       borderDash: [3, 3],

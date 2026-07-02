@@ -5,16 +5,15 @@ import type { ChartData, ChartOptions } from 'chart.js'
 
 export interface GanttRow {
   label: string
-  startDate: Date | null
-  endDate: Date | null
+  /** 0-based period indices where this concept actually has planned volume. */
+  periods: number[]
   amount: number // Money (cents) — for tooltip
 }
 
 const props = withDefaults(
   defineProps<{
     rows: GanttRow[]
-    contractStart: Date | null
-    contractEnd: Date | null
+    periodCount: number
     height?: number
   }>(),
   { height: 220 },
@@ -22,56 +21,33 @@ const props = withDefaults(
 
 const colors = useChartColors()
 
-// Convert a Date to a numeric value for Chart.js (days since epoch, so bars are proportional)
-const toDays = (d: Date) => Math.floor(d.getTime() / 86_400_000)
+const xLabels = computed<string[]>(() =>
+  Array.from({ length: props.periodCount }, (_, idx) => `P${idx + 1}`),
+)
 
-// Build evenly-spaced month labels across the contract range
-const xLabels = computed<string[]>(() => {
-  if (!props.contractStart || !props.contractEnd) return []
-  const labels: string[] = []
-  const cur = new Date(props.contractStart)
-  cur.setDate(1)
-  while (cur <= props.contractEnd) {
-    labels.push(
-      cur.toLocaleDateString('es-MX', { month: 'short', year: '2-digit' }),
-    )
-    cur.setMonth(cur.getMonth() + 1)
+const NONE = null as unknown as [number, number]
+
+// One dataset per period column, same approach as ScheduleGantt — a row's
+// bar only appears in the periods it's actually scheduled for, so gaps
+// between non-consecutive periods are disconnected rather than bridged.
+const chartData = computed<ChartData<'bar'>>(() => {
+  const datasets = Array.from({ length: props.periodCount }, (_, periodIdx) => ({
+    label: `P${periodIdx + 1}`,
+    data: props.rows.map((r) =>
+      r.periods.includes(periodIdx) ? [periodIdx + 0.05, periodIdx + 0.95] as [number, number] : NONE,
+    ),
+    backgroundColor: colors.primary + 'cc',
+    borderRadius: 3,
+    borderSkipped: false,
+    barPercentage: 0.85,
+    categoryPercentage: 0.85,
+  }))
+
+  return {
+    labels: props.rows.map((r) => r.label),
+    datasets,
   }
-  return labels
 })
-
-// Map a date to a label index (fractional OK for floating bars)
-const toIdx = (d: Date): number => {
-  if (!props.contractStart) return 0
-  const origin = new Date(props.contractStart)
-  origin.setDate(1)
-  const diffMs = d.getTime() - origin.getTime()
-  const daysInMonth = 30.44 // average
-  return diffMs / (daysInMonth * 86_400_000)
-}
-
-const chartData = computed<ChartData<'bar'>>(() => ({
-  labels: xLabels.value,
-  datasets: [
-    {
-      label: 'Programa',
-      data: props.rows.map((r) => {
-        if (!r.startDate || !r.endDate) return null
-        return [toIdx(r.startDate), toIdx(r.endDate)] as [number, number]
-      }),
-      backgroundColor: props.rows.map((r) => {
-        if (!r.startDate || !r.endDate) return 'transparent'
-        // Highlight rows with dates outside contract range
-        const outOfRange =
-          (props.contractStart && r.startDate < props.contractStart) ||
-          (props.contractEnd && r.endDate > props.contractEnd)
-        return outOfRange ? colors.error + 'cc' : colors.primary + 'cc'
-      }),
-      borderRadius: 3,
-      borderSkipped: false,
-    },
-  ],
-}))
 
 const options = computed<ChartOptions<'bar'>>(() => ({
   indexAxis: 'y',
@@ -80,7 +56,7 @@ const options = computed<ChartOptions<'bar'>>(() => ({
   scales: {
     x: {
       min: 0,
-      max: xLabels.value.length,
+      max: props.periodCount,
       ticks: {
         stepSize: 1,
         callback: (v) => {
@@ -106,17 +82,18 @@ const options = computed<ChartOptions<'bar'>>(() => ({
     legend: { display: false },
     tooltip: {
       callbacks: {
-        title: (items) => props.rows[items[0].dataIndex]?.label ?? '',
+        title: (items) => {
+          const row = props.rows[items[0].dataIndex]
+          const periodIdx = items[0].datasetIndex
+          return `${row?.label ?? ''} — P${periodIdx + 1}`
+        },
         label: (ctx) => {
           const row = props.rows[ctx.dataIndex]
-          if (!row?.startDate || !row?.endDate) return 'Sin fechas'
-          const fmt = (d: Date) => d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
-          return [
-            `${fmt(row.startDate)} → ${fmt(row.endDate)}`,
-            `Importe: ${(row.amount / 100).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}`,
-          ]
+          if (!row) return ''
+          return `Importe: ${formatMoney(row.amount)}`
         },
       },
+      filter: (ctx) => ctx.raw != null,
     },
   },
 }))
