@@ -54,8 +54,11 @@ import type {
   UploadProgress,
 } from '../types'
 
+import { putBlob, getBlob, deleteBlob, deleteBlobs, clearAllBlobs } from './blobStore'
+
 const delay = (ms = 150) => new Promise<void>((r) => setTimeout(r, ms))
 const clone = <T>(v: T): T => structuredClone(v)
+const MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024 // 20MB — keeps things sane for browser-side storage
 const counters: Record<string, number> = {}
 const genId = (prefix: string) => `${prefix}-${(counters[prefix] = (counters[prefix] ?? 100) + 1)}`
 
@@ -207,6 +210,7 @@ function buildContractPeriods(contract: Contract): { start: Date; end: Date }[] 
 
 export function resetMockDb(): void {
   localStorage.removeItem(STORAGE_KEY)
+  clearAllBlobs().catch(() => { /* best-effort — nothing else to do if this fails */ })
 }
 
 export function createMockRepositories(): Repositories {
@@ -235,6 +239,9 @@ export function createMockRepositories(): Repositories {
 
   // Mock session — set on login; defaults to the resident for convenience.
   let currentUserId: UserId = 'U-RES'
+  // Tracks the most recently created object URL per file, so a repeat
+  // getDownloadUrl() call revokes the old one instead of leaking it.
+  const activeObjectUrls = new Map<string, string>()
   const currentUser = (): User => {
     const u = db.users.find((x) => x.id === currentUserId)
     if (!u) throw new RepositoryError(401, 'No autenticado', 'unauthenticated')
@@ -1182,10 +1189,23 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
         collect(folderId)
         db.folders = db.folders.filter((x) => !toDelete.has(x.id))
         save()
-        db.files   = db.files.filter((x) => !toDelete.has(x.folderId))
+        const removedFiles = db.files.filter((x) => toDelete.has(x.folderId))
+        db.files = db.files.filter((x) => !toDelete.has(x.folderId))
         save()
+        for (const rf of removedFiles) {
+          const url = activeObjectUrls.get(rf.id)
+          if (url) { URL.revokeObjectURL(url); activeObjectUrls.delete(rf.id) }
+        }
+        await deleteBlobs(removedFiles.map((x) => x.id)).catch(() => { /* best-effort */ })
       },
       async upload(input: UploadFileInput, onProgress?: UploadProgress) {
+        if (input.file.size > MAX_UPLOAD_SIZE_BYTES) {
+          throw new RepositoryError(
+            413,
+            `El archivo supera el límite de ${MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)}MB.`,
+            'file_too_large',
+          )
+        }
         for (let p = 0.2; p < 1; p += 0.2) {
           await delay(80)
           onProgress?.(p)
@@ -1199,7 +1219,16 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
           sizeBytes: input.file.size,
           uploadedById: currentUserId,
           uploadedAt: new Date(),
-          downloadUrl: '#', // replaced by getDownloadUrl in production
+          downloadUrl: '#', // resolved on demand by getDownloadUrl() from the IndexedDB blob store
+        }
+        try {
+          await putBlob(file.id, input.file)
+        } catch (e) {
+          throw new RepositoryError(
+            500,
+            e instanceof Error ? e.message : 'No se pudo guardar el archivo en este navegador.',
+            'blob_store_failed',
+          )
         }
         db.files.push(file)
         save()
@@ -1215,16 +1244,26 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
         }
         db.files = db.files.filter((x) => x.id !== fileId)
         save()
+        const url = activeObjectUrls.get(fileId)
+        if (url) { URL.revokeObjectURL(url); activeObjectUrls.delete(fileId) }
+        await deleteBlob(fileId).catch(() => { /* best-effort */ })
       },
       async getDownloadUrl(fileId) {
         await delay()
         const f = db.files.find((x) => x.id === fileId)
         if (!f) throw notFound('Archivo')
-        // Simulate a download by creating a Blob with placeholder content.
-        // In production this would return a presigned URL.
-        const content = `[Mock file: ${f.name} — ${f.sizeBytes} bytes]`
-        const blob = new Blob([content], { type: f.mimeType || 'application/octet-stream' })
-        return URL.createObjectURL(blob)
+        const blob = await getBlob(fileId).catch(() => null)
+        const prevUrl = activeObjectUrls.get(fileId)
+        if (prevUrl) URL.revokeObjectURL(prevUrl)
+        // Fallback placeholder for files uploaded before real byte storage
+        // was added (their metadata exists but there's no blob on disk).
+        const effectiveBlob = blob ?? new Blob(
+          [`[Archivo no disponible: ${f.name} — subido antes de habilitar el almacenamiento real de archivos.]`],
+          { type: 'text/plain' },
+        )
+        const url = URL.createObjectURL(effectiveBlob)
+        activeObjectUrls.set(fileId, url)
+        return url
       },
     },
     evidence: {
