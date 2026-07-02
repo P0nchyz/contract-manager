@@ -74,8 +74,16 @@ const contractorCorporationId = computed(() => superintendentCorpId.value)
 type SectionDraft = { specificationNumber: string; description: string }
 const catalogSections = ref<SectionDraft[]>([])
 
+// The section that new concepts automatically attach to — updated whenever
+// the user adds a section or edits one of its fields.
+const lastEditedSectionIdx = ref<number | null>(null)
+
 function addSection() {
   catalogSections.value.push({ specificationNumber: '', description: '' })
+  lastEditedSectionIdx.value = catalogSections.value.length - 1
+}
+function touchSection(idx: number) {
+  lastEditedSectionIdx.value = idx
 }
 function removeSection(idx: number) {
   catalogSections.value.splice(idx, 1)
@@ -84,6 +92,8 @@ function removeSection(idx: number) {
     if (c._sectionIdx === idx) c._sectionIdx = null
     else if (c._sectionIdx != null && c._sectionIdx > idx) c._sectionIdx--
   })
+  if (lastEditedSectionIdx.value === idx) lastEditedSectionIdx.value = null
+  else if (lastEditedSectionIdx.value != null && lastEditedSectionIdx.value > idx) lastEditedSectionIdx.value--
 }
 
 const resolvedSections = computed<CreateConceptSectionInput[]>(() =>
@@ -104,17 +114,45 @@ const sectionErrors = computed(() =>
 )
 
 // ─── Form: section 4 — concepts ──────────────────────────────────────────────
-type ConceptDraft = CreateConceptInput & { _qtyRaw: string; _priceRaw: string; _sectionIdx: number | null }
+type ConceptDraft = CreateConceptInput & { _qtyRaw: string; _priceRaw: string; _sectionIdx: number | null; _key: number }
 const concepts = ref<ConceptDraft[]>([])
+let conceptKeySeq = 0
 
 function addConcept() {
-  concepts.value.push({ specificationNumber: '', description: '', unit: '', contractedQuantity: 0, unitPrice: 0, _qtyRaw: '', _priceRaw: '', _sectionIdx: null, sectionId: null })
+  addConceptToSection(lastEditedSectionIdx.value)
 }
-function removeConcept(idx: number) {
+function addConceptToSection(sectionIdx: number | null) {
+  concepts.value.push({
+    specificationNumber: '', description: '', unit: '', contractedQuantity: 0, unitPrice: 0,
+    _qtyRaw: '', _priceRaw: '', _sectionIdx: sectionIdx, sectionId: null, _key: ++conceptKeySeq,
+  })
+  if (sectionIdx != null) lastEditedSectionIdx.value = sectionIdx
+}
+function removeConcept(concept: ConceptDraft) {
+  const idx = concepts.value.indexOf(concept)
+  if (idx === -1) return
   concepts.value.splice(idx, 1)
-  scheduleItems.value = scheduleItems.value
-    .filter((s) => s.conceptIndex !== idx)
-    .map((s) => ({ ...s, conceptIndex: s.conceptIndex > idx ? s.conceptIndex - 1 : s.conceptIndex }))
+  scheduleGrid.value.splice(idx, 1)
+  scheduleActive.value.splice(idx, 1)
+}
+
+/** Concepts sharing a section, in current display order. `null` = unsectioned. */
+function conceptsInSection(sectionIdx: number | null) {
+  return concepts.value.filter((c) => c._sectionIdx === sectionIdx)
+}
+
+/** Reorder a concept up/down within its own section group, keeping the
+ *  parallel scheduleGrid/scheduleActive rows aligned with the new positions. */
+function moveConcept(concept: ConceptDraft, direction: -1 | 1) {
+  const group = conceptsInSection(concept._sectionIdx)
+  const posInGroup = group.indexOf(concept)
+  const swapWith = group[posInGroup + direction]
+  if (!swapWith) return
+  const i1 = concepts.value.indexOf(concept)
+  const i2 = concepts.value.indexOf(swapWith)
+    ;[concepts.value[i1], concepts.value[i2]] = [concepts.value[i2], concepts.value[i1]]
+    ;[scheduleGrid.value[i1], scheduleGrid.value[i2]] = [scheduleGrid.value[i2], scheduleGrid.value[i1]]
+    ;[scheduleActive.value[i1], scheduleActive.value[i2]] = [scheduleActive.value[i2], scheduleActive.value[i1]]
 }
 
 const resolvedConcepts = computed<CreateConceptInput[]>(() =>
@@ -166,19 +204,67 @@ watch(() => derivedPeriods.value.length, (len) => {
 })
 
 // scheduleGrid[conceptIndex][periodIndex] = planned quantity (string for input)
-// Auto-sized when concepts or periods change.
+// scheduleActive[conceptIndex][periodIndex] = whether that concept has been
+// explicitly added to that period's schedule (controls what's shown, so we
+// don't dump every concept into every period by default).
+// Both auto-sized when concepts or periods change.
 const scheduleGrid = ref<string[][]>([])
+const scheduleActive = ref<boolean[][]>([])
 
 watch(
   [() => concepts.value.length, () => derivedPeriods.value.length],
   ([cLen, pLen]) => {
-    const prev = scheduleGrid.value
+    const prevGrid = scheduleGrid.value
+    const prevActive = scheduleActive.value
     scheduleGrid.value = Array.from({ length: cLen }, (_, ci) =>
-      Array.from({ length: pLen }, (_, pi) => prev[ci]?.[pi] ?? ''),
+      Array.from({ length: pLen }, (_, pi) => prevGrid[ci]?.[pi] ?? ''),
+    )
+    scheduleActive.value = Array.from({ length: cLen }, (_, ci) =>
+      Array.from({ length: pLen }, (_, pi) =>
+        prevActive[ci]?.[pi] ?? (parseFloat(prevGrid[ci]?.[pi] ?? '') || 0) > 0,
+      ),
     )
   },
   { immediate: true },
 )
+
+// ─── Add/remove concepts from the currently active period tab ───────────────
+function addConceptToPeriod(conceptIdx: number) {
+  if (!scheduleActive.value[conceptIdx]) return
+  scheduleActive.value[conceptIdx][activePeriodTab.value] = true
+}
+function removeConceptFromPeriod(conceptIdx: number) {
+  if (scheduleGrid.value[conceptIdx]) scheduleGrid.value[conceptIdx][activePeriodTab.value] = ''
+  if (scheduleActive.value[conceptIdx]) scheduleActive.value[conceptIdx][activePeriodTab.value] = false
+}
+
+/** Concepts already added to the active period tab, restricted to one section (or unsectioned when null). */
+function activeConceptsInPeriodSection(sectionIdx: number | null) {
+  return concepts.value
+    .map((c, ci) => ({ c, ci }))
+    .filter(({ c, ci }) => c._sectionIdx === sectionIdx && scheduleActive.value[ci]?.[activePeriodTab.value])
+}
+const activeConceptsInPeriodCount = computed(() =>
+  concepts.value.filter((_, ci) => scheduleActive.value[ci]?.[activePeriodTab.value]).length,
+)
+
+// Picker: choose from the concepts NOT yet added to the active period tab.
+const pickerValue = ref<number | null>(null)
+const pickerItems = computed(() =>
+  concepts.value
+    .map((c, ci) => ({ c, ci }))
+    .filter(({ ci }) => !scheduleActive.value[ci]?.[activePeriodTab.value])
+    .map(({ c, ci }) => {
+      const sec = c._sectionIdx != null ? catalogSections.value[c._sectionIdx] : null
+      const secPrefix = sec ? `${sec.specificationNumber || sec.description} · ` : ''
+      return { label: `${secPrefix}${c.specificationNumber} ${c.description}`.trim(), value: ci }
+    }),
+)
+watch(pickerValue, (v) => {
+  if (v == null) return
+  addConceptToPeriod(v)
+  pickerValue.value = null
+})
 
 // Planned totals per concept (must equal contractedQuantity)
 const conceptTotals = computed(() =>
@@ -225,7 +311,7 @@ const errors = computed(() => ({
   title: !title.value.trim() ? F.validation.titleRequired : null,
   dates: (!startDate.value || !endDate.value) ? F.validation.datesRequired
     : startDate.value >= endDate.value ? F.validation.endBeforeStart : null,
-  anticipo: (anticipoPct.value === '' || Number(anticipoPct.value) < 0 || Number(anticipoPct.value) > 100) ? F.validation.anticipoRange : null,
+  anticipo: (anticipoPct.value === '' || Number(anticipoPct.value) < 0 || Number(anticipoPct.value) > 30) ? F.validation.anticipoRange : null,
   iva: (ivaRate.value === '' || Number(ivaRate.value) < 0 || Number(ivaRate.value) > 100) ? F.validation.ivaRange : null,
   retention: (retentionPct.value === '' || Number(retentionPct.value) < 0 || Number(retentionPct.value) > 100) ? F.validation.retentionRange : null,
   resident: !residentId.value ? F.validation.residentRequired : null,
@@ -359,8 +445,8 @@ const sections = [
       <UDashboardNavbar :title="F.title">
         <template #leading>
           <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost"
-            :to="phase === 'upload' && createdContractId ? `/contracts/${createdContractId}` : '/'"
-            :aria-label="S.common.back" />
+            :to="phase === 'upload' && createdContractId && allDone ? `/contracts/${createdContractId}` : phase === 'upload' ? undefined : '/'"
+            :disabled="phase === 'upload' && !allDone" :aria-label="S.common.back" />
         </template>
       </UDashboardNavbar>
     </template>
@@ -419,8 +505,9 @@ const sections = [
             </div>
           </template>
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <UFormField :label="F.fields.anticipoPercentage" :error="errors.anticipo || undefined">
-              <UInput v-model.number="anticipoPct" type="number" min="0" max="100" step="1" class="w-full">
+            <UFormField :label="F.fields.anticipoPercentage" :error="errors.anticipo || undefined"
+              :hint="F.fields.anticipoMax">
+              <UInput v-model.number="anticipoPct" type="number" min="0" max="30" step="1" class="w-full">
                 <template #trailing><span class="pr-2 text-sm text-muted">%</span></template>
               </UInput>
             </UFormField>
@@ -521,105 +608,166 @@ const sections = [
           </template>
 
           <p class="border-b border-default px-4 py-2 text-xs text-muted">
-            {{ F.concepts.hint }}
+            {{ F.concepts.hint }} {{ F.concepts.sectionHint }}
           </p>
 
-          <!-- Partidas (sections) ─────────────────────────────────────────── -->
-          <div v-if="catalogSections.length" class="border-b border-default">
-            <div class="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted">
-              Partidas de conceptos
-            </div>
-            <div class="divide-y divide-default">
-              <div v-for="(sec, idx) in catalogSections" :key="idx" class="flex items-center gap-3 px-4 py-2.5">
+          <div v-if="!catalogSections.length && !concepts.length" class="px-4 py-8 text-center text-sm text-muted">
+            {{ F.concepts.empty }}
+          </div>
+
+          <!-- Column header (shared visual alignment with the rows below) -->
+          <div v-else
+            class="hidden border-b border-default bg-elevated/50 px-4 py-2 text-xs text-muted lg:grid lg:grid-cols-[7rem_1fr_4.5rem_6rem_7rem_7rem_4.5rem_4rem] lg:gap-2">
+            <span class="font-medium">{{ F.concepts.columns.specification }}</span>
+            <span class="font-medium">{{ F.concepts.columns.description }}</span>
+            <span class="font-medium">{{ F.concepts.columns.unit }}</span>
+            <span class="text-right font-medium">{{ F.concepts.columns.qty }}</span>
+            <span class="text-right font-medium">{{ F.concepts.columns.unitPrice }}</span>
+            <span class="text-right font-medium">{{ F.concepts.columns.amount }}</span>
+            <span />
+            <span />
+          </div>
+
+          <div class="divide-y divide-default">
+            <!-- One block per partida (section) — concepts created while this
+                 section is active automatically attach to it. -->
+            <div v-for="(sec, si) in catalogSections" :key="si" class="px-4 py-3"
+              :class="lastEditedSectionIdx === si ? 'bg-primary/5' : ''">
+              <div class="mb-2 flex flex-wrap items-center gap-2">
                 <UInput v-model="sec.specificationNumber" class="w-24" placeholder="A"
-                  :color="sectionErrors[idx]?.spec ? 'error' : undefined" />
-                <UInput v-model="sec.description" class="flex-1" placeholder="Nombre de la partida"
-                  :color="sectionErrors[idx]?.desc ? 'error' : undefined" />
-                <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" @click="removeSection(idx)" />
+                  :color="sectionErrors[si]?.spec ? 'error' : undefined" @focus="touchSection(si)" />
+                <UInput v-model="sec.description" class="min-w-0 flex-1" placeholder="Nombre de la partida"
+                  :color="sectionErrors[si]?.desc ? 'error' : undefined" @focus="touchSection(si)" />
+                <UBadge v-if="lastEditedSectionIdx === si" :label="F.concepts.activeSection" color="primary"
+                  variant="subtle" size="sm" />
+                <UButton size="xs" icon="i-lucide-plus" color="neutral" variant="outline"
+                  @click="addConceptToSection(si)">
+                  {{ F.concepts.add }}
+                </UButton>
+                <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" @click="removeSection(si)" />
+              </div>
+
+              <div v-if="conceptsInSection(si).length" class="space-y-2 lg:space-y-0 lg:divide-y lg:divide-default/60">
+                <div v-for="c in conceptsInSection(si)" :key="c._key"
+                  class="grid grid-cols-1 gap-2 rounded-lg border border-default p-2.5 lg:grid-cols-[7rem_1fr_4.5rem_6rem_7rem_7rem_4.5rem_4rem] lg:items-start lg:rounded-none lg:border-0 lg:border-b-0 lg:p-0 lg:py-2">
+                  <div>
+                    <UInput v-model="c.specificationNumber" class="w-full" placeholder="E-101"
+                      :color="conceptErrors[concepts.indexOf(c)]?.spec ? 'error' : undefined" />
+                    <p v-if="conceptErrors[concepts.indexOf(c)]?.spec" class="mt-0.5 text-xs text-error">
+                      {{ conceptErrors[concepts.indexOf(c)].spec }}</p>
+                  </div>
+                  <div>
+                    <UInput v-model="c.description" class="w-full"
+                      :color="conceptErrors[concepts.indexOf(c)]?.desc ? 'error' : undefined" />
+                    <p v-if="conceptErrors[concepts.indexOf(c)]?.desc" class="mt-0.5 text-xs text-error">
+                      {{ conceptErrors[concepts.indexOf(c)].desc }}</p>
+                  </div>
+                  <div>
+                    <UInput v-model="c.unit" class="w-full" placeholder="m2"
+                      :color="conceptErrors[concepts.indexOf(c)]?.unit ? 'error' : undefined" />
+                    <p v-if="conceptErrors[concepts.indexOf(c)]?.unit" class="mt-0.5 text-xs text-error">
+                      {{ conceptErrors[concepts.indexOf(c)].unit }}</p>
+                  </div>
+                  <div>
+                    <UInput v-model="c._qtyRaw" type="number" min="0" step="any" class="w-full [&_input]:text-right"
+                      :color="conceptErrors[concepts.indexOf(c)]?.qty ? 'error' : undefined" />
+                    <p v-if="conceptErrors[concepts.indexOf(c)]?.qty" class="mt-0.5 text-xs text-error">
+                      {{ conceptErrors[concepts.indexOf(c)].qty }}</p>
+                  </div>
+                  <div>
+                    <UInput v-model="c._priceRaw" type="number" min="0" step="0.01" class="w-full [&_input]:text-right"
+                      :color="conceptErrors[concepts.indexOf(c)]?.price ? 'error' : undefined">
+                      <template #leading><span class="pl-1 text-xs text-muted">$</span></template>
+                    </UInput>
+                    <p v-if="conceptErrors[concepts.indexOf(c)]?.price" class="mt-0.5 text-xs text-error">
+                      {{ conceptErrors[concepts.indexOf(c)].price }}</p>
+                  </div>
+                  <div class="pt-2 text-right text-sm tabular-nums text-muted lg:pt-1.5">
+                    {{ formatMoney(Math.round((parseFloat(c._priceRaw) || 0) * 100) * (parseFloat(c._qtyRaw) || 0)) }}
+                  </div>
+                  <div class="flex items-center justify-end gap-0.5 pt-1">
+                    <UButton icon="i-lucide-chevron-up" size="xs" color="neutral" variant="ghost"
+                      :disabled="conceptsInSection(si).indexOf(c) === 0" :aria-label="F.concepts.moveUp"
+                      @click="moveConcept(c, -1)" />
+                    <UButton icon="i-lucide-chevron-down" size="xs" color="neutral" variant="ghost"
+                      :disabled="conceptsInSection(si).indexOf(c) === conceptsInSection(si).length - 1"
+                      :aria-label="F.concepts.moveDown" @click="moveConcept(c, 1)" />
+                  </div>
+                  <div class="flex items-center justify-end pt-1">
+                    <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost"
+                      :aria-label="F.concepts.columns.remove" @click="removeConcept(c)" />
+                  </div>
+                </div>
+              </div>
+              <p v-else class="pl-1 text-xs italic text-muted">{{ F.concepts.emptySection }}</p>
+            </div>
+
+            <!-- Concepts without a section (legacy / orphaned by a removed partida) -->
+            <div v-if="conceptsInSection(null).length" class="px-4 py-3">
+              <div class="mb-2 flex items-center justify-between">
+                <span class="text-sm font-semibold text-muted">{{ F.concepts.noSection }}</span>
+                <UButton v-if="!catalogSections.length" size="xs" icon="i-lucide-plus" color="neutral" variant="outline"
+                  @click="addConcept">{{ F.concepts.add }}</UButton>
+              </div>
+              <div class="space-y-2 lg:space-y-0 lg:divide-y lg:divide-default/60">
+                <div v-for="c in conceptsInSection(null)" :key="c._key"
+                  class="grid grid-cols-1 gap-2 rounded-lg border border-default p-2.5 lg:grid-cols-[7rem_1fr_4.5rem_6rem_7rem_7rem_4.5rem_4rem] lg:items-start lg:rounded-none lg:border-0 lg:p-0 lg:py-2">
+                  <div>
+                    <UInput v-model="c.specificationNumber" class="w-full" placeholder="E-101"
+                      :color="conceptErrors[concepts.indexOf(c)]?.spec ? 'error' : undefined" />
+                    <p v-if="conceptErrors[concepts.indexOf(c)]?.spec" class="mt-0.5 text-xs text-error">
+                      {{ conceptErrors[concepts.indexOf(c)].spec }}</p>
+                  </div>
+                  <div>
+                    <UInput v-model="c.description" class="w-full"
+                      :color="conceptErrors[concepts.indexOf(c)]?.desc ? 'error' : undefined" />
+                    <p v-if="conceptErrors[concepts.indexOf(c)]?.desc" class="mt-0.5 text-xs text-error">
+                      {{ conceptErrors[concepts.indexOf(c)].desc }}</p>
+                  </div>
+                  <div>
+                    <UInput v-model="c.unit" class="w-full" placeholder="m2"
+                      :color="conceptErrors[concepts.indexOf(c)]?.unit ? 'error' : undefined" />
+                    <p v-if="conceptErrors[concepts.indexOf(c)]?.unit" class="mt-0.5 text-xs text-error">
+                      {{ conceptErrors[concepts.indexOf(c)].unit }}</p>
+                  </div>
+                  <div>
+                    <UInput v-model="c._qtyRaw" type="number" min="0" step="any" class="w-full [&_input]:text-right"
+                      :color="conceptErrors[concepts.indexOf(c)]?.qty ? 'error' : undefined" />
+                    <p v-if="conceptErrors[concepts.indexOf(c)]?.qty" class="mt-0.5 text-xs text-error">
+                      {{ conceptErrors[concepts.indexOf(c)].qty }}</p>
+                  </div>
+                  <div>
+                    <UInput v-model="c._priceRaw" type="number" min="0" step="0.01" class="w-full [&_input]:text-right"
+                      :color="conceptErrors[concepts.indexOf(c)]?.price ? 'error' : undefined">
+                      <template #leading><span class="pl-1 text-xs text-muted">$</span></template>
+                    </UInput>
+                    <p v-if="conceptErrors[concepts.indexOf(c)]?.price" class="mt-0.5 text-xs text-error">
+                      {{ conceptErrors[concepts.indexOf(c)].price }}</p>
+                  </div>
+                  <div class="pt-2 text-right text-sm tabular-nums text-muted lg:pt-1.5">
+                    {{ formatMoney(Math.round((parseFloat(c._priceRaw) || 0) * 100) * (parseFloat(c._qtyRaw) || 0)) }}
+                  </div>
+                  <div class="flex items-center justify-end gap-0.5 pt-1">
+                    <UButton icon="i-lucide-chevron-up" size="xs" color="neutral" variant="ghost"
+                      :disabled="conceptsInSection(null).indexOf(c) === 0" :aria-label="F.concepts.moveUp"
+                      @click="moveConcept(c, -1)" />
+                    <UButton icon="i-lucide-chevron-down" size="xs" color="neutral" variant="ghost"
+                      :disabled="conceptsInSection(null).indexOf(c) === conceptsInSection(null).length - 1"
+                      :aria-label="F.concepts.moveDown" @click="moveConcept(c, 1)" />
+                  </div>
+                  <div class="flex items-center justify-end pt-1">
+                    <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost"
+                      :aria-label="F.concepts.columns.remove" @click="removeConcept(c)" />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Concepts table ──────────────────────────────────────────────── -->
-          <div v-if="!concepts.length" class="px-4 py-8 text-center text-sm text-muted">
-            {{ F.concepts.empty }}
-          </div>
-          <div v-else class="overflow-x-auto">
-            <table class="w-full min-w-[52rem] text-sm">
-              <thead class="border-b border-default bg-elevated/50 text-xs text-muted">
-                <tr>
-                  <th class="px-3 py-2 text-left font-medium">{{ F.concepts.columns.specification }}</th>
-                  <th class="px-3 py-2 text-left font-medium">{{ F.concepts.columns.description }}</th>
-                  <th class="px-3 py-2 text-left font-medium">{{ F.concepts.columns.unit }}</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ F.concepts.columns.qty }}</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ F.concepts.columns.unitPrice }}</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ F.concepts.columns.amount }}</th>
-                  <th v-if="catalogSections.length" class="px-3 py-2 text-left font-medium">Partida</th>
-                  <th class="px-2 py-2" />
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-default">
-                <tr v-for="(c, idx) in concepts" :key="idx" class="align-top">
-                  <td class="px-3 py-2">
-                    <UInput v-model="c.specificationNumber" class="w-28" placeholder="E-101"
-                      :color="conceptErrors[idx]?.spec ? 'error' : undefined" />
-                    <p v-if="conceptErrors[idx]?.spec" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].spec }}
-                    </p>
-                  </td>
-                  <td class="min-w-[14rem] px-3 py-2">
-                    <UInput v-model="c.description" class="w-full"
-                      :color="conceptErrors[idx]?.desc ? 'error' : undefined" />
-                    <p v-if="conceptErrors[idx]?.desc" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].desc }}
-                    </p>
-                  </td>
-                  <td class="px-3 py-2">
-                    <UInput v-model="c.unit" class="w-20" placeholder="m2"
-                      :color="conceptErrors[idx]?.unit ? 'error' : undefined" />
-                    <p v-if="conceptErrors[idx]?.unit" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].unit }}
-                    </p>
-                  </td>
-                  <td class="px-3 py-2">
-                    <UInput v-model="c._qtyRaw" type="number" min="0" step="any" class="w-24 [&_input]:text-right"
-                      :color="conceptErrors[idx]?.qty ? 'error' : undefined" />
-                    <p v-if="conceptErrors[idx]?.qty" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].qty }}</p>
-                  </td>
-                  <td class="px-3 py-2">
-                    <UInput v-model="c._priceRaw" type="number" min="0" step="0.01" class="w-32 [&_input]:text-right"
-                      :color="conceptErrors[idx]?.price ? 'error' : undefined">
-                      <template #leading><span class="pl-1 text-xs text-muted">$</span></template>
-                    </UInput>
-                    <p v-if="conceptErrors[idx]?.price" class="mt-0.5 text-xs text-error">{{ conceptErrors[idx].price }}
-                    </p>
-                  </td>
-                  <td class="px-3 py-2 text-right tabular-nums text-muted">
-                    {{ formatMoney(Math.round((parseFloat(c._priceRaw) || 0) * 100) * (parseFloat(c._qtyRaw) || 0)) }}
-                  </td>
-                  <td v-if="catalogSections.length" class="px-3 py-2">
-                    <USelect v-model="c._sectionIdx" :items="[
-                      { label: '— Sin partida —', value: null },
-                      ...catalogSections.map((s, i) => ({
-                        label: `${s.specificationNumber || (i + 1)} ${s.description}`,
-                        value: i,
-                      }))
-                    ]" class="w-44" />
-                  </td>
-                  <td class="px-2 py-2">
-                    <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" @click="removeConcept(idx)" />
-                  </td>
-                </tr>
-              </tbody>
-              <tfoot class="border-t-2 border-default bg-elevated/50">
-                <tr>
-                  <td colspan="5" class="px-3 py-2 text-right text-xs font-medium text-muted">{{ F.concepts.total }}
-                  </td>
-                  <td class="px-3 py-2 text-right tabular-nums font-semibold text-highlighted">{{
-                    formatMoney(totalAmount) }}
-                  </td>
-                  <td v-if="catalogSections.length" />
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
+          <div v-if="concepts.length"
+            class="flex items-center justify-between border-t-2 border-default bg-elevated/50 px-4 py-2.5">
+            <span class="text-xs font-medium text-muted">{{ F.concepts.total }}</span>
+            <span class="text-sm font-semibold tabular-nums text-highlighted">{{ formatMoney(totalAmount) }}</span>
           </div>
         </UCard>
 
@@ -650,70 +798,103 @@ const sections = [
 
           <!-- Active period input ──────────────────────────────────────────── -->
           <div v-if="derivedPeriods[activePeriodTab]" class="px-4 py-3">
-            <div class="mb-3 text-xs text-muted">
-              {{ derivedPeriods[activePeriodTab].start.toLocaleDateString('es-MX', {
-                day: '2-digit', month: 'long',
-                year:
-                  'numeric'
-              }) }}
-              –
-              {{ derivedPeriods[activePeriodTab].end.toLocaleDateString('es-MX', {
-                day: '2-digit', month: 'long', year:
-                  'numeric'
-              }) }}
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div class="text-xs text-muted">
+                {{ derivedPeriods[activePeriodTab].start.toLocaleDateString('es-MX', {
+                  day: '2-digit', month: 'long', year: 'numeric'
+                }) }}
+                –
+                {{ derivedPeriods[activePeriodTab].end.toLocaleDateString('es-MX', {
+                  day: '2-digit', month: 'long', year: 'numeric'
+                }) }}
+              </div>
+              <USelect v-model="pickerValue" :items="pickerItems" :placeholder="F.schedule.addConcept"
+                icon="i-lucide-plus" class="w-full sm:w-72" :disabled="!pickerItems.length" />
+            </div>
+
+            <div v-if="!activeConceptsInPeriodCount"
+              class="rounded-lg border border-dashed border-default px-4 py-6 text-center text-xs text-muted">
+              {{ F.schedule.emptyPeriod }}
             </div>
 
             <!-- Grouped by section ─────────────────────────────────────────── -->
-            <div class="space-y-4">
+            <div v-else class="space-y-4">
               <!-- Section groups -->
               <template v-for="(sec, si) in catalogSections" :key="si">
-                <div>
+                <div v-if="activeConceptsInPeriodSection(si).length">
                   <div class="mb-1.5 flex items-center gap-2">
                     <span class="font-mono text-xs font-semibold text-muted">{{ sec.specificationNumber }}</span>
                     <span class="text-sm font-semibold text-highlighted">{{ sec.description }}</span>
                   </div>
-                  <div class="space-y-1">
-                    <div v-for="(c, ci) in concepts.filter(c => c._sectionIdx === si)" :key="ci"
-                      class="flex items-center gap-3">
+                  <div class="space-y-1.5">
+                    <div v-for="{ c, ci } in activeConceptsInPeriodSection(si)" :key="c._key"
+                      class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-default px-3 py-2">
                       <div class="min-w-0 flex-1">
                         <span class="font-mono text-xs text-muted">{{ c.specificationNumber }}</span>
                         <span class="ml-2 text-sm text-highlighted">{{ c.description }}</span>
-                        <span class="ml-1 text-xs text-muted">({{ c.unit }})</span>
                       </div>
                       <div class="flex items-center gap-1.5 shrink-0">
-                        <UInput v-model="scheduleGrid[concepts.indexOf(c)][activePeriodTab]" type="number" min="0"
-                          step="any" class="w-28 [&_input]:text-right [&_input]:text-success [&_input]:font-medium" />
-                        <span class="text-xs text-muted">/ {{ parseFloat(c._qtyRaw) || 0 }} {{ c.unit }}</span>
+                        <UInput v-model="scheduleGrid[ci][activePeriodTab]" type="number" min="0" step="any"
+                          class="w-24 [&_input]:text-right [&_input]:text-success [&_input]:font-medium" />
+                        <span class="text-xs text-muted">{{ c.unit }}</span>
                       </div>
+                      <div class="shrink-0 text-xs text-muted tabular-nums">
+                        {{ F.schedule.contracted }}: <span class="font-medium text-highlighted">{{ parseFloat(c._qtyRaw)
+                          || 0 }}</span>
+                      </div>
+                      <div class="shrink-0 text-xs tabular-nums"
+                        :class="scheduleErrors[ci] ? 'text-error' : 'text-muted'">
+                        {{ F.schedule.scheduledTotal }}:
+                        <span class="font-medium">{{ (conceptTotals[ci] ?? 0).toFixed(2) }} / {{ parseFloat(c._qtyRaw)
+                          || 0 }}</span>
+                      </div>
+                      <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost"
+                        :aria-label="F.schedule.removeFromPeriod" @click="removeConceptFromPeriod(ci)" />
                     </div>
                   </div>
                 </div>
               </template>
 
               <!-- Concepts without a section ──────────────────────────────── -->
-              <div v-if="concepts.some(c => c._sectionIdx == null)">
-                <div v-if="catalogSections.length" class="mb-1.5 text-sm font-semibold text-muted">Sin partida</div>
-                <div class="space-y-1">
-                  <div v-for="(c, ci) in concepts.filter(c => c._sectionIdx == null)" :key="ci"
-                    class="flex items-center gap-3">
+              <div v-if="activeConceptsInPeriodSection(null).length">
+                <div v-if="catalogSections.length" class="mb-1.5 text-sm font-semibold text-muted">
+                  {{ F.concepts.noSection }}
+                </div>
+                <div class="space-y-1.5">
+                  <div v-for="{ c, ci } in activeConceptsInPeriodSection(null)" :key="c._key"
+                    class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-default px-3 py-2">
                     <div class="min-w-0 flex-1">
                       <span class="font-mono text-xs text-muted">{{ c.specificationNumber }}</span>
                       <span class="ml-2 text-sm text-highlighted">{{ c.description }}</span>
-                      <span class="ml-1 text-xs text-muted">({{ c.unit }})</span>
                     </div>
                     <div class="flex items-center gap-1.5 shrink-0">
-                      <UInput v-model="scheduleGrid[concepts.indexOf(c)][activePeriodTab]" type="number" min="0"
-                        step="any" class="w-28 [&_input]:text-right [&_input]:text-success [&_input]:font-medium" />
-                      <span class="text-xs text-muted">/ {{ parseFloat(c._qtyRaw) || 0 }} {{ c.unit }}</span>
+                      <UInput v-model="scheduleGrid[ci][activePeriodTab]" type="number" min="0" step="any"
+                        class="w-24 [&_input]:text-right [&_input]:text-success [&_input]:font-medium" />
+                      <span class="text-xs text-muted">{{ c.unit }}</span>
                     </div>
+                    <div class="shrink-0 text-xs text-muted tabular-nums">
+                      {{ F.schedule.contracted }}: <span class="font-medium text-highlighted">{{ parseFloat(c._qtyRaw)
+                        || 0
+                      }}</span>
+                    </div>
+                    <div class="shrink-0 text-xs tabular-nums"
+                      :class="scheduleErrors[ci] ? 'text-error' : 'text-muted'">
+                      {{ F.schedule.scheduledTotal }}:
+                      <span class="font-medium">{{ (conceptTotals[ci] ?? 0).toFixed(2) }} / {{ parseFloat(c._qtyRaw) ||
+                        0
+                      }}</span>
+                    </div>
+                    <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost"
+                      :aria-label="F.schedule.removeFromPeriod" @click="removeConceptFromPeriod(ci)" />
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- Period totals ───────────────────────────────────────────────── -->
-            <div class="mt-3 border-t border-default pt-3 text-xs text-muted space-y-0.5">
-              <div v-for="(c, ci) in concepts" :key="ci" class="flex items-center justify-between"
+            <!-- Overall totals across every period (all concepts, not just this tab) -->
+            <div class="mt-4 border-t border-default pt-3 text-xs text-muted space-y-0.5">
+              <p class="mb-1 font-medium text-muted">{{ F.schedule.overallTotals }}</p>
+              <div v-for="(c, ci) in concepts" :key="c._key" class="flex items-center justify-between"
                 :class="scheduleErrors[ci] ? 'text-error' : ''">
                 <span class="truncate">{{ c.description || `Concepto ${ci + 1}` }}</span>
                 <span class="shrink-0 tabular-nums ml-4">
@@ -771,9 +952,12 @@ const sections = [
       <div v-else-if="phase === 'upload'" class="space-y-6">
         <UCard>
           <template #header>
-            <div class="flex items-center gap-2 font-medium">
-              <UIcon name="i-lucide-folder-open" class="size-4 text-muted" />
-              {{ F.files.title }}
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 font-medium">
+                <UIcon name="i-lucide-folder-open" class="size-4 text-muted" />
+                {{ F.files.title }}
+              </div>
+              <UBadge :label="F.files.requiredBadge" color="warning" variant="subtle" size="sm" />
             </div>
           </template>
 
@@ -829,13 +1013,11 @@ const sections = [
             </UButton>
             <div v-else />
 
-            <div class="flex gap-3">
-              <UButton v-if="!allDone" color="neutral" variant="ghost" :to="`/contracts/${createdContractId}`">
-                {{ F.files.skip }}
-              </UButton>
-              <UButton icon="i-lucide-arrow-right" :to="`/contracts/${createdContractId}`">
+            <div class="flex flex-col items-end gap-1">
+              <UButton icon="i-lucide-arrow-right" :disabled="!allDone" :to="`/contracts/${createdContractId}`">
                 {{ F.files.finalize }}
               </UButton>
+              <span v-if="!allDone" class="text-xs text-muted">{{ F.files.required }}</span>
             </div>
           </div>
         </UCard>
