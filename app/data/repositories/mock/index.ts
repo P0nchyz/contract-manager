@@ -59,6 +59,32 @@ const clone = <T>(v: T): T => structuredClone(v)
 const counters: Record<string, number> = {}
 const genId = (prefix: string) => `${prefix}-${(counters[prefix] = (counters[prefix] ?? 100) + 1)}`
 
+// IDs are strings shaped exactly like "PREFIX-123". Since `counters` above is
+// only ever kept in memory, it resets to empty on every page load — without
+// this, genId() would always start back at 101 for a given prefix even
+// though localStorage already has entities using those IDs, causing
+// collisions after the very first session. Walk the whole persisted DB once
+// at startup and bump each prefix's counter past the highest ID seen.
+function seedCountersFromDb(value: unknown, seen: Set<unknown> = new Set()): void {
+  if (!value || typeof value !== 'object' || seen.has(value)) return
+  seen.add(value)
+  if (Array.isArray(value)) {
+    for (const item of value) seedCountersFromDb(item, seen)
+    return
+  }
+  for (const v of Object.values(value as Record<string, unknown>)) {
+    if (typeof v === 'string') {
+      const m = /^([A-Z]+)-(\d+)$/.exec(v)
+      if (m) {
+        const num = parseInt(m[2]!, 10)
+        if (!Number.isNaN(num) && num > (counters[m[1]!] ?? 100)) counters[m[1]!] = num
+      }
+    } else if (v && typeof v === 'object') {
+      seedCountersFromDb(v, seen)
+    }
+  }
+}
+
 // ─── LocalStorage persistence ──────────────────────────────────────────────
 // Dates are tagged as { $date: isoString } so they survive JSON round-trips.
 const DATE_TAG = '$date'
@@ -205,6 +231,7 @@ export function createMockRepositories(): Repositories {
     alerts: clone(seed.alerts),
   }
   const db = loadDb(seedDb)
+  seedCountersFromDb(db)
 
   // Mock session — set on login; defaults to the resident for convenience.
   let currentUserId: UserId = 'U-RES'

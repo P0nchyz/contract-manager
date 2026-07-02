@@ -90,12 +90,13 @@ interface WRow { id: string; quantity: string; photoFileId: string | null; fileI
 interface WHoja { id: string; conceptId: string; rows: WRow[] }
 const hojas = ref<WHoja[]>([])
 
-// Hydrate hojas from an existing draft
+// Hydrate hojas from an existing draft. A hoja is limited to a single row —
+// if older data somehow has more (e.g. a legacy draft), only the first is kept.
 function hydrateFromEstimate(e: Estimate) {
   hojas.value = e.hojas.map((h) => ({
     id: h.id,
     conceptId: String(h.conceptId),
-    rows: h.rows.map((r) => ({
+    rows: h.rows.slice(0, 1).map((r) => ({
       id: r.id,
       quantity: String(r.quantity),
       photoFileId: r.photoFileId,
@@ -122,14 +123,27 @@ function addHoja() {
   pickConceptId.value = undefined
 }
 function removeHoja(idx: number) { hojas.value.splice(idx, 1) }
-function addRow(h: WHoja) { h.rows.push({ id: `r-${Date.now()}-${Math.random()}`, quantity: '', photoFileId: null, fileIds: [], logNoteIds: [] }) }
-function removeRow(h: WHoja, ri: number) { h.rows.splice(ri, 1) }
 
 function conceptOf(id: string) { return data.value?.concepts.find((c) => String(c.id) === String(id)) ?? null }
 function sectionOf(id: string | null | undefined) {
   return id ? (data.value?.sections.find((s) => String(s.id) === String(id)) ?? null) : null
 }
 function hojaTotal(h: WHoja) { return h.rows.reduce((s, r) => s + (parseFloat(r.quantity) || 0), 0) }
+
+/** Scheduled quantity for a concept in the currently selected period. */
+function scheduledQuantityForConcept(id: string): number {
+  if (selectedPeriodIndex.value == null || !data.value) return 0
+  const periodIdx0 = selectedPeriodIndex.value - 1
+  return data.value.scheduleEntries
+    .filter((en) => String(en.conceptId) === String(id) && en.periodIndex === periodIdx0)
+    .reduce((s, en) => s + en.plannedQuantity, 0)
+}
+/** Estimated amount (Money, cents) for a concept in this period — scheduled quantity × unit price. */
+function estimatedAmountForConcept(id: string): number {
+  const concept = conceptOf(id)
+  if (!concept) return 0
+  return Math.round(scheduledQuantityForConcept(id) * concept.unitPrice)
+}
 
 // ─── Photo picker ─────────────────────────────────────────────────────────────
 const photoModalOpen = ref(false)
@@ -315,7 +329,7 @@ const reviewEstimate = computed(() => currentEstimate.value)
               <div class="mb-4 flex flex-wrap items-end gap-3">
                 <UFormField :label="F.hojas.pickConcept" class="flex-1 min-w-[16rem]">
                   <USelect v-model="pickConceptId"
-                    :items="availableConcepts.map((c) => ({ label: `${c.specificationNumber} — ${c.description}`, value: String(c.id) }))"
+                    :items="availableConcepts.map((c) => ({ label: `${c.specificationNumber} — ${c.description} · ${F.hojas.estimatedAmount}: ${formatMoney(estimatedAmountForConcept(String(c.id)))}`, value: String(c.id) }))"
                     :placeholder="availableConcepts.length ? F.hojas.pickConcept : F.hojas.noConceptsForPeriod"
                     :disabled="!availableConcepts.length" class="w-full" />
                 </UFormField>
@@ -334,18 +348,20 @@ const reviewEstimate = computed(() => currentEstimate.value)
                   <div class="flex items-start justify-between gap-3 border-b border-default bg-elevated/30 px-4 py-3">
                     <div class="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
                       <div><span class="text-muted">{{ F.hojas.number }}:</span> <span class="font-semibold">{{ hi + 1
-                          }}</span></div>
+                      }}</span></div>
                       <div><span class="text-muted">{{ F.hojas.partida }}:</span> <span class="font-medium">{{
                         sectionOf(conceptOf(h.conceptId)?.sectionId)?.specificationNumber ?? '—' }}</span></div>
                       <div class="sm:col-span-2"><span class="text-muted">{{ F.hojas.clave }}:</span> <span
                           class="font-medium">{{
                             conceptOf(h.conceptId)?.specificationNumber }} — {{ conceptOf(h.conceptId)?.description
                           }}</span></div>
+                      <div><span class="text-muted">{{ F.hojas.estimatedAmount }}:</span> <span class="font-medium">{{
+                        formatMoney(estimatedAmountForConcept(h.conceptId)) }}</span></div>
                     </div>
                     <UButton icon="i-lucide-trash-2" color="error" variant="ghost" size="xs" @click="removeHoja(hi)" />
                   </div>
 
-                  <!-- Rows table -->
+                  <!-- Row (single row per hoja) -->
                   <div class="overflow-x-auto">
                     <table class="w-full text-xs">
                       <thead class="border-b border-default bg-elevated/20 text-muted">
@@ -355,15 +371,14 @@ const reviewEstimate = computed(() => currentEstimate.value)
                           <th class="px-2 py-1.5 text-right">{{ F.hojas.cantidad }} ({{ F.hojas.catalogo }})</th>
                           <th class="px-2 py-1.5 text-right">{{ F.hojas.cantidad }} ({{ F.hojas.ejecutado }})</th>
                           <th class="px-2 py-1.5">{{ F.hojas.rowPhoto }}</th>
-                          <th class="px-2 py-1.5"></th>
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-default">
-                        <tr v-for="(r, ri) in h.rows" :key="r.id">
-                          <td class="px-2 py-1.5">{{ ri === 0 ? conceptOf(h.conceptId)?.description : '' }}</td>
+                        <tr v-for="r in h.rows" :key="r.id">
+                          <td class="px-2 py-1.5">{{ conceptOf(h.conceptId)?.description }}</td>
                           <td class="px-2 py-1.5 text-center">{{ conceptOf(h.conceptId)?.unit }}</td>
-                          <td class="px-2 py-1.5 text-right tabular-nums text-muted">{{ ri === 0 ?
-                            formatNumber(conceptOf(h.conceptId)?.contractedQuantity ?? 0) : '' }}</td>
+                          <td class="px-2 py-1.5 text-right tabular-nums text-muted">
+                            {{ formatNumber(conceptOf(h.conceptId)?.contractedQuantity ?? 0) }}</td>
                           <td class="px-2 py-1.5">
                             <UInput v-model="r.quantity" type="number" size="xs" class="w-24" :placeholder="'0'" />
                           </td>
@@ -376,19 +391,11 @@ const reviewEstimate = computed(() => currentEstimate.value)
                               </UButton>
                             </div>
                           </td>
-                          <td class="px-2 py-1.5 text-right">
-                            <UButton icon="i-lucide-x" color="error" variant="ghost" size="xs"
-                              :disabled="h.rows.length <= 1" @click="removeRow(h, ri)" />
-                          </td>
                         </tr>
                         <tr class="bg-elevated/20 font-semibold">
                           <td colspan="3" class="px-2 py-1.5 text-right">{{ F.hojas.hojaTotal }}</td>
-                          <td class="px-2 py-1.5 tabular-nums">{{ formatNumber(hojaTotal(h)) }} {{
+                          <td colspan="2" class="px-2 py-1.5 tabular-nums">{{ formatNumber(hojaTotal(h)) }} {{
                             conceptOf(h.conceptId)?.unit }}
-                          </td>
-                          <td colspan="2" class="px-2 py-1.5">
-                            <UButton icon="i-lucide-plus" variant="ghost" size="xs" @click="addRow(h)">{{ F.hojas.addRow
-                              }}</UButton>
                           </td>
                         </tr>
                       </tbody>
