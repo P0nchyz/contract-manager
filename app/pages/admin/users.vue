@@ -295,95 +295,9 @@ async function createCorporation() {
       </template>
 
       <!-- ─── New user modal ─────────────────────────────────────────── -->
-      <UModal v-model:open="showUserForm" :title="A.users.form.title">
-        <template #body>
-          <div class="space-y-4">
-            <UFormField :label="A.users.form.fullName">
-              <UInput v-model="userFullName" class="w-full" :placeholder="A.users.form.fullNamePlaceholder" />
-            </UFormField>
-
-            <UFormField :label="A.users.form.username">
-              <UInput v-model="userUsername" class="w-full" :placeholder="A.users.form.usernamePlaceholder"
-                autocomplete="off" />
-            </UFormField>
-
-            <UFormField :label="A.users.form.password">
-              <UInput v-model="userPassword" :type="showPassword ? 'text' : 'password'" class="w-full"
-                autocomplete="new-password">
-                <template #trailing>
-                  <UButton :icon="showPassword ? 'i-lucide-eye-off' : 'i-lucide-eye'" color="neutral" variant="ghost"
-                    size="xs" @click="showPassword = !showPassword" />
-                </template>
-              </UInput>
-            </UFormField>
-
-            <UFormField :label="A.users.form.role">
-              <USelect v-model="userRole" :items="ROLE_OPTIONS" :placeholder="`— ${A.users.form.role} —`"
-                class="w-full" />
-            </UFormField>
-
-            <UFormField v-if="userRole === 'superintendent' || userRole === 'supervisor'"
-              :label="A.users.form.corporation" :error="userErrors.corporation || undefined">
-              <USelect v-model="userCorpId"
-                :items="(data?.corporations ?? []).map((c) => ({ label: c.name, value: c.id }))"
-                :placeholder="`— ${A.users.form.corporation} —`" class="w-full" />
-            </UFormField>
-
-            <UFormField v-if="userRole === 'resident' || userRole === 'financial'" :label="A.users.form.entity"
-              :error="userErrors.entity || undefined">
-              <USelect v-model="userEntityId"
-                :items="(data?.users ?? []).filter(u => u.role === 'entity').map((u) => ({ label: u.fullName, value: u.id }))"
-                :placeholder="`— ${A.users.form.entity} —`" class="w-full" />
-            </UFormField>
-
-            <UFormField :label="A.users.form.cedula">
-              <UInput v-model="userCedula" class="w-full" :placeholder="A.users.form.cedulaPlaceholder" />
-            </UFormField>
-
-            <UAlert v-if="userError" :title="userError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
-          </div>
-        </template>
-        <template #footer>
-          <div class="flex w-full justify-end gap-3">
-            <UButton color="neutral" variant="ghost" @click="showUserForm = false">
-              {{ S.common.cancel }}
-            </UButton>
-            <UButton icon="i-lucide-user-plus" :loading="userSaving" :disabled="!canCreateUser" @click="createUser">
-              {{ A.users.form.save }}
-            </UButton>
-          </div>
-        </template>
-      </UModal>
 
       <!-- ─── New corporation modal ──────────────────────────────────── -->
-      <UModal v-model:open="showCorpForm" :title="A.corporations.form.title">
-        <template #body>
-          <div class="space-y-4">
-            <UFormField :label="A.corporations.form.name" :error="corpErrors.name || undefined">
-              <UInput v-model="corpName" class="w-full" :placeholder="A.corporations.form.namePlaceholder" />
-            </UFormField>
 
-            <UFormField :label="A.corporations.form.rfc">
-              <UInput v-model="corpRfc" class="w-full" :placeholder="A.corporations.form.rfcPlaceholder" />
-            </UFormField>
-
-
-
-            <UAlert v-if="corpError" :title="corpError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
-          </div>
-        </template>
-        <template #footer>
-          <div class="flex w-full justify-end gap-3">
-            <UButton color="neutral" variant="ghost" @click="showCorpForm = false">
-              {{ S.common.cancel }}
-            </UButton>
-            <UButton icon="i-lucide-building-2" :loading="corpSaving" :disabled="!canCreateCorp"
-              @click="createCorporation">
-              {{ A.corporations.form.save }}
-            </UButton>
-          </div>
-        </template>
-      </UModal>
       <!-- Entities tab -->
       <template v-if="activeTab === 'entities'">
         <div v-if="!data?.entities.length" class="py-16 text-center text-sm text-muted">{{ A.entities.empty }}</div>
@@ -413,37 +327,125 @@ async function createCorporation() {
       </template>
 
       <!-- New entity modal -->
-      <UModal v-model:open="showEntityForm" :title="A.entities.form.title">
-        <template #body>
-          <div class="space-y-4">
-            <UFormField :label="A.entities.form.name" :error="entityErrors.name || undefined">
-              <UInput v-model="entityName" class="w-full" :placeholder="A.entities.form.namePlaceholder" />
-            </UFormField>
-            <UFormField :label="A.entities.form.username" :error="entityErrors.username || undefined">
-              <UInput v-model="entityUsername" class="w-full" :placeholder="A.entities.form.usernamePlaceholder"
-                autocomplete="off" />
-            </UFormField>
-            <UFormField :label="A.entities.form.password" :error="entityErrors.password || undefined">
-              <UInput v-model="entityPassword" :type="showEntityPwd ? 'text' : 'password'" class="w-full"
-                autocomplete="new-password">
-                <template #trailing>
-                  <UButton :icon="showEntityPwd ? 'i-lucide-eye-off' : 'i-lucide-eye'" color="neutral" variant="ghost"
-                    size="xs" @click="showEntityPwd = !showEntityPwd" />
-                </template>
-              </UInput>
-            </UFormField>
-            <UAlert v-if="entityError" :title="entityError" color="error" variant="soft"
-              icon="i-lucide-alert-triangle" />
-          </div>
-        </template>
-        <template #footer>
-          <div class="flex w-full justify-end gap-3">
-            <UButton color="neutral" variant="ghost" @click="showEntityForm = false">{{ S.common.cancel }}</UButton>
-            <UButton icon="i-lucide-landmark" :loading="entitySaving" :disabled="!canCreateEntity"
-              @click="createEntity">{{ A.entities.form.save }}</UButton>
-          </div>
-        </template>
-      </UModal>
+
     </template>
   </UDashboardPanel>
+
+
+  <UModal v-model:open="showUserForm" :title="A.users.form.title">
+    <template #body>
+      <div class="space-y-4">
+        <UFormField :label="A.users.form.fullName">
+          <UInput v-model="userFullName" class="w-full" :placeholder="A.users.form.fullNamePlaceholder" />
+        </UFormField>
+
+        <UFormField :label="A.users.form.username">
+          <UInput v-model="userUsername" class="w-full" :placeholder="A.users.form.usernamePlaceholder"
+            autocomplete="off" />
+        </UFormField>
+
+        <UFormField :label="A.users.form.password">
+          <UInput v-model="userPassword" :type="showPassword ? 'text' : 'password'" class="w-full"
+            autocomplete="new-password">
+            <template #trailing>
+              <UButton :icon="showPassword ? 'i-lucide-eye-off' : 'i-lucide-eye'" color="neutral" variant="ghost"
+                size="xs" @click="showPassword = !showPassword" />
+            </template>
+          </UInput>
+        </UFormField>
+
+        <UFormField :label="A.users.form.role">
+          <USelect v-model="userRole" :items="ROLE_OPTIONS" :placeholder="`— ${A.users.form.role} —`" class="w-full" />
+        </UFormField>
+
+        <UFormField v-if="userRole === 'superintendent' || userRole === 'supervisor'" :label="A.users.form.corporation"
+          :error="userErrors.corporation || undefined">
+          <USelect v-model="userCorpId" :items="(data?.corporations ?? []).map((c) => ({ label: c.name, value: c.id }))"
+            :placeholder="`— ${A.users.form.corporation} —`" class="w-full" />
+        </UFormField>
+
+        <UFormField v-if="userRole === 'resident' || userRole === 'financial'" :label="A.users.form.entity"
+          :error="userErrors.entity || undefined">
+          <USelect v-model="userEntityId"
+            :items="(data?.users ?? []).filter(u => u.role === 'entity').map((u) => ({ label: u.fullName, value: u.id }))"
+            :placeholder="`— ${A.users.form.entity} —`" class="w-full" />
+        </UFormField>
+
+        <UFormField :label="A.users.form.cedula">
+          <UInput v-model="userCedula" class="w-full" :placeholder="A.users.form.cedulaPlaceholder" />
+        </UFormField>
+
+        <UAlert v-if="userError" :title="userError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
+      </div>
+    </template>
+    <template #footer>
+      <div class="flex w-full justify-end gap-3">
+        <UButton color="neutral" variant="ghost" @click="showUserForm = false">
+          {{ S.common.cancel }}
+        </UButton>
+        <UButton icon="i-lucide-user-plus" :loading="userSaving" :disabled="!canCreateUser" @click="createUser">
+          {{ A.users.form.save }}
+        </UButton>
+      </div>
+    </template>
+  </UModal>
+
+  <UModal v-model:open="showCorpForm" :title="A.corporations.form.title">
+    <template #body>
+      <div class="space-y-4">
+        <UFormField :label="A.corporations.form.name" :error="corpErrors.name || undefined">
+          <UInput v-model="corpName" class="w-full" :placeholder="A.corporations.form.namePlaceholder" />
+        </UFormField>
+
+        <UFormField :label="A.corporations.form.rfc">
+          <UInput v-model="corpRfc" class="w-full" :placeholder="A.corporations.form.rfcPlaceholder" />
+        </UFormField>
+
+
+
+        <UAlert v-if="corpError" :title="corpError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
+      </div>
+    </template>
+    <template #footer>
+      <div class="flex w-full justify-end gap-3">
+        <UButton color="neutral" variant="ghost" @click="showCorpForm = false">
+          {{ S.common.cancel }}
+        </UButton>
+        <UButton icon="i-lucide-building-2" :loading="corpSaving" :disabled="!canCreateCorp" @click="createCorporation">
+          {{ A.corporations.form.save }}
+        </UButton>
+      </div>
+    </template>
+  </UModal>
+
+  <UModal v-model:open="showEntityForm" :title="A.entities.form.title">
+    <template #body>
+      <div class="space-y-4">
+        <UFormField :label="A.entities.form.name" :error="entityErrors.name || undefined">
+          <UInput v-model="entityName" class="w-full" :placeholder="A.entities.form.namePlaceholder" />
+        </UFormField>
+        <UFormField :label="A.entities.form.username" :error="entityErrors.username || undefined">
+          <UInput v-model="entityUsername" class="w-full" :placeholder="A.entities.form.usernamePlaceholder"
+            autocomplete="off" />
+        </UFormField>
+        <UFormField :label="A.entities.form.password" :error="entityErrors.password || undefined">
+          <UInput v-model="entityPassword" :type="showEntityPwd ? 'text' : 'password'" class="w-full"
+            autocomplete="new-password">
+            <template #trailing>
+              <UButton :icon="showEntityPwd ? 'i-lucide-eye-off' : 'i-lucide-eye'" color="neutral" variant="ghost"
+                size="xs" @click="showEntityPwd = !showEntityPwd" />
+            </template>
+          </UInput>
+        </UFormField>
+        <UAlert v-if="entityError" :title="entityError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
+      </div>
+    </template>
+    <template #footer>
+      <div class="flex w-full justify-end gap-3">
+        <UButton color="neutral" variant="ghost" @click="showEntityForm = false">{{ S.common.cancel }}</UButton>
+        <UButton icon="i-lucide-landmark" :loading="entitySaving" :disabled="!canCreateEntity" @click="createEntity">{{
+          A.entities.form.save }}</UButton>
+      </div>
+    </template>
+  </UModal>
 </template>

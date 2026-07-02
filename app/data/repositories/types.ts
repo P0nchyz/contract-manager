@@ -8,6 +8,7 @@ import type {
   Alert,
   AlertId,
   Concept,
+  ConceptId,
   ContractId,
   Contract,
   ContractFinancials,
@@ -79,25 +80,36 @@ export interface CreateContractInput {
   title: string
   // amount is DERIVED from initialConcepts — not supplied by the caller.
   anticipoPercentage: Percentage
-  ivaRate: Percentage            // e.g. 16
-  retentionPercentage: Percentage // e.g. 5
+  ivaRate: Percentage
+  retentionPercentage: Percentage
   estimatePeriodicity: 'monthly' | 'biweekly'
   startDate: Date
   endDate: Date
+  residentId: UserId | null
   superintendentId: UserId | null
   supervisorId: UserId | null
-  financialId: UserId | null
+  superintendentCorporationId: CorporationId | null
+  supervisorCorporationId: CorporationId | null
   contractorCorporationId: CorporationId | null
   initialSections: CreateConceptSectionInput[]
   initialConcepts: CreateConceptInput[]
   scheduleEntries: InitialScheduleEntry[]
 }
+export interface AssignRolesInput {
+  residentId?: UserId | null
+  superintendentId?: UserId | null
+  supervisorId?: UserId | null
+  superintendentCorporationId?: CorporationId | null
+  supervisorCorporationId?: CorporationId | null
+}
+
 export interface ContractRepository {
   /** Contracts visible to the current user (assignment/creation rules applied). */
   listMine(params?: ListParams): Promise<Contract[]>
   getById(id: ContractId): Promise<Contract>
   create(input: CreateContractInput): Promise<Contract>
   update(id: ContractId, patch: Partial<CreateContractInput>): Promise<Contract>
+  assignRoles(id: ContractId, patch: AssignRolesInput): Promise<Contract>
   getFinancials(id: ContractId): Promise<ContractFinancials>
 }
 
@@ -127,26 +139,47 @@ export interface ConceptRepository {
 }
 
 // --- Estimates -------------------------------------------------------------
-export interface EstimateLineInput {
-  conceptId: Concept['id']
-  inThisEstimate: number // the editable quantity; the rest is derived
+
+/** A single measurement row within a Hoja Generadora. */
+export interface HojaRowInput {
+  id?: string
+  quantity: number
+  photoFileId?: FileId | null
+  fileIds?: FileId[]
+  logNoteIds?: LogNoteId[]
 }
+
+/** A Hoja Generadora payload (one concept, one or more rows). */
+export interface HojaInput {
+  id?: string
+  conceptId: Concept['id']
+  rows: HojaRowInput[]
+}
+
+/** Create a draft estimate for a period. Hojas are added via updateDraft. */
 export interface CreateEstimateInput {
   contractId: ContractId
   /** 1-based period number. */
   periodIndex: number
-  lineItems: EstimateLineInput[]
-  evidenceFileIds?: FileId[]
-  linkedLogNoteIds?: LogNoteId[]
 }
+
+/** Update a draft estimate's Hojas. */
+export interface UpdateEstimateDraftInput {
+  hojas: HojaInput[]
+}
+
+/** Section notes keyed by 'cover' | 'services' | 'summary' | `hoja:${conceptId}`. */
+export type ReturnWithNotesInput = Record<string, string>
+
 export interface EstimateRepository {
   listByContract(contractId: ContractId, params?: ListParams): Promise<Estimate[]>
   getById(id: EstimateId): Promise<Estimate>
   create(input: CreateEstimateInput): Promise<Estimate> // -> draft
-  updateDraft(id: EstimateId, input: Omit<CreateEstimateInput, 'contractId'>): Promise<Estimate>
+  updateDraft(id: EstimateId, input: UpdateEstimateDraftInput): Promise<Estimate>
+  delete(id: EstimateId): Promise<void> // delete a draft
   submit(id: EstimateId): Promise<Estimate>
-  approve(id: EstimateId): Promise<Estimate> // supervisor
-  returnWithNotes(id: EstimateId, note: string): Promise<Estimate> // supervisor
+  approve(id: EstimateId): Promise<Estimate>
+  returnWithNotes(id: EstimateId, notes: ReturnWithNotesInput): Promise<Estimate> // supervisor
   reject(id: EstimateId, note: string): Promise<Estimate> // resident
   markPaid(id: EstimateId, paymentEvidenceFileId?: FileId): Promise<Estimate> // financial
   sign(id: EstimateId): Promise<Estimate>

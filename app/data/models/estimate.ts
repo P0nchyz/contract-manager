@@ -1,6 +1,7 @@
 // app/data/models/estimate.ts
 import type {
   ConceptId,
+  ConceptSectionId,
   ContractId,
   CorporationId,
   EstimateId,
@@ -15,110 +16,139 @@ import type {
 } from './common'
 
 /**
- * The estimate "cover" — the predefined header. Mostly DERIVED from the
- * contract + contractor + estimate metadata (read-only/black on screen).
+ * The estimate "cover" (Carátula) — the predefined header. DERIVED from the
+ * contract + contractor + estimate metadata.
  */
 export interface EstimateCover {
+  entityName: string
   contractCode: string
   contractTitle: string
+  contractStartDate: Date
   contractorName: string
-  contractorCorporationId: CorporationId | null
+  contractorRfc: string | null
   estimateNumber: number
   periodIndex: number
   periodStart: Date
   periodEnd: Date
 }
 
+// --- Hojas Generadoras -----------------------------------------------------
+
 /**
- * One row of the estimate concept grid. Field comments mark the on-screen
- * color/source per spec:
- *   black = read-only, previously known (contract or prior estimates)
- *   red   = read-only, auto-calculated from THIS estimate
- *   green = editable
+ * A single measurement row inside a Hoja Generadora. Each row records an
+ * executed quantity and carries its own evidence (a required photo on submit,
+ * plus optional extra files and linked log notes).
  */
-export interface EstimateLineItem {
-  conceptId: ConceptId // ref to catalog concept
-  conceptNumber: number // (1) sequential within this estimate
-  specificationNumber: string // (2) from catalog            [black]
-  description: string // (3) concept description             [black]
-  unit: string // (4) unit                                   [black]
-  inProject: number // (5) contracted quantity               [black]
-  upToLastEstimate: number // (6) accumulated before this    [black]
-  inThisEstimate: number // (7) quantity this estimate       [green / editable]
-  totalEstimated: number // (8) = upToLastEstimate + inThisEstimate   [red]
-  toExecute: number // (9) = inProject - totalEstimated      [red]
-  unitPrice: Money // (10) from contract                     [black]
-  totalAmount: Money // (11) = unitPrice * inThisEstimate    [red]
+export interface HojaRow {
+  id: string
+  quantity: number            // "Cantidad" executed in this row
+  photoFileId: FileId | null  // required to SUBMIT (may be null while draft)
+  fileIds: FileId[]           // optional additional files
+  logNoteIds: LogNoteId[]     // optional linked log notes
 }
 
-// --- Summary: TWO tables ---------------------------------------------------
-
 /**
- * Table 1 — concept rollup. One row per concept in the estimate, summed to a
- * subtotal. (Subtotal === calculations.estimateAmount.)
+ * A Hoja Generadora — the ONLY place quantities are entered. Exactly one
+ * concept per Hoja; a Hoja may contain multiple rows of that same concept,
+ * each with its own evidence. The Hoja total = sum of its rows' quantities and
+ * feeds the estimate's calculations for that concept.
  */
-export interface EstimateConceptSummaryRow {
+export interface HojaGeneradora {
+  id: string
+  number: number              // "No. de Hoja Generadora" — sequential within the estimate
   conceptId: ConceptId
+  // Snapshot of concept fields (frozen at creation for display)
   specificationNumber: string
   description: string
-  amount: Money // this concept's importe in this estimate
-}
-
-export interface EstimateConceptSummary {
-  rows: EstimateConceptSummaryRow[]
-  subtotal: Money
+  unit: string
+  sectionId: ConceptSectionId // "Partida"
+  contractedQuantity: number  // "Catálogo" cantidad
+  unitPrice: Money
+  rows: HojaRow[]
 }
 
 /**
- * Table 2 — lists the concept rows AND the financial calculations for this
- * estimate.
+ * A derived per-concept line used for the "Estimación de Servicios Ejecutados"
+ * table. Computed from the Hojas (never edited directly).
  */
+export interface EstimateLineItem {
+  conceptId: ConceptId
+  conceptNumber: number
+  specificationNumber: string
+  description: string
+  unit: string
+  inProject: number          // contracted quantity
+  upToLastEstimate: number   // accumulated across prior APPROVED estimates
+  inThisEstimate: number     // = sum of this concept's Hoja rows
+  totalEstimated: number     // upToLastEstimate + inThisEstimate
+  toExecute: number          // inProject - totalEstimated
+  unitPrice: Money
+  totalAmount: Money         // unitPrice * inThisEstimate
+}
+
+// --- Summary (Resumen por Partida) -----------------------------------------
+
+/** One row = one concept SECTION (partida) referenced by the Hojas. */
+export interface EstimatePartidaRow {
+  sectionId: ConceptSectionId
+  partidaNumber: string   // "Num. de Partida" (section specificationNumber)
+  description: string
+  amount: Money           // sum of the section's concept amounts in this estimate
+}
+
 export interface EstimateCalculations {
-  rows: EstimateConceptSummaryRow[] // same concept rows as table 1
-  ivaRate: Percentage // e.g. 16
-  estimateAmount: Money // importe de la estimación (= subtotal)
+  ivaRate: Percentage
+  estimateAmount: Money        // importe de la estimación (= partidas subtotal)
   estimateIva: Money
-  estimateTotal: Money // estimateAmount + estimateIva
-  anticipoAmortization: Money // amortización de anticipo
-  amortizationIva: Money
-  amortizationTotal: Money // anticipoAmortization + amortizationIva
-  retentions: Money // retenciones / fondo de garantía
-  cincoAlMillarSfp: Money // 5 al millar SFP (0.5%)
-  total: Money // estimateTotal - amortizationTotal - retentions - cincoAlMillarSfp
+  estimateTotal: Money         // estimateAmount + estimateIva
+  anticipoAmortization: Money  // amortización de anticipo
+  amortizationIva: Money       // IVA on the amortization (same ivaRate)
+  amortizationTotal: Money     // anticipoAmortization + amortizationIva
+  retentions: Money
+  cincoAlMillarSfp: Money      // 0.5%
+  total: Money                 // estimateTotal - amortizationTotal - retentions - cincoAlMillarSfp
 }
 
 export interface EstimateSummary {
-  conceptSummary: EstimateConceptSummary // table 1
-  calculations: EstimateCalculations // table 2
+  partidas: EstimatePartidaRow[]
+  partidasSubtotal: Money
+  calculations: EstimateCalculations
 }
 
 /**
+ * Section notes added by the supervisor when returning an estimate. Keyed by
+ * section: 'cover' | 'services' | 'summary' | `hoja:${conceptId}`.
+ * Informational only; visible to everyone in the viewer.
+ */
+export type EstimateSectionNotes = Record<string, string>
+
+/**
  * A construction estimate (estimación). Only Superintendents create these.
- * Lifecycle: draft -> submitted -> (with_notes | rejected -> back to draft)
- *            -> approved -> paid.
+ * Lifecycle: draft -> submitted -> (with_notes | rejected) | approved -> paid.
+ * A returned estimate (with_notes/rejected) is NOT editable — a new estimate
+ * must be created for the period. Only APPROVED estimates count toward the
+ * one-per-period rule.
  */
 export interface Estimate {
   id: EstimateId
   contractId: ContractId
   number: number
-  /** 1-based period number matching the period index+1 in the work schedule. */
-  periodIndex: number
+  periodIndex: number   // 1-based
   status: EstimateStatus
-  periodStart: Date  // derived from periodIndex for display
-  periodEnd: Date    // derived from periodIndex for display
+  periodStart: Date
+  periodEnd: Date
 
   cover: EstimateCover
-  lineItems: EstimateLineItem[]
-  summary: EstimateSummary
+  hojas: HojaGeneradora[]         // the source of truth for quantities
+  lineItems: EstimateLineItem[]   // derived from hojas (recomputed on save)
+  summary: EstimateSummary        // derived from hojas (recomputed on save)
 
-  signatures: Signature[] // resident + superintendent + supervisor
-  history: WorkflowEvent[] // immutable trace; notes render inline on view
+  sectionNotes: EstimateSectionNotes
 
-  // Attachments section
-  evidenceFileIds: FileId[]
-  linkedLogNoteIds: LogNoteId[]
+  signatures: Signature[]
+  history: WorkflowEvent[]
 
-  createdById: UserId // superintendent
+  createdById: UserId
   createdAt: Date
   updatedAt: Date
 }

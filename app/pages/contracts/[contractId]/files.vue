@@ -305,11 +305,11 @@ function onDrop(e: DragEvent, targetFolderId: string | null) {
 function onFileInput(e: Event) {
   const files = Array.from((e.target as HTMLInputElement).files ?? [])
   if (files.length) enqueueFiles(files, null)
-  ;(e.target as HTMLInputElement).value = ''
+    ; (e.target as HTMLInputElement).value = ''
 }
 
 const pendingUploads = computed(() => uploadQueue.value.filter((e) => e.status !== 'done' && e.status !== 'error'))
-const recentUploads  = computed(() => uploadQueue.value.filter((e) => e.status === 'done' || e.status === 'error'))
+const recentUploads = computed(() => uploadQueue.value.filter((e) => e.status === 'done' || e.status === 'error'))
 
 function dismissUploads() {
   uploadQueue.value = uploadQueue.value.filter((e) => e.status === 'queued' || e.status === 'uploading')
@@ -347,34 +347,17 @@ function fileIcon(mime: string): string {
     <template #header>
       <UDashboardNavbar :title="F.title">
         <template #leading>
-          <UButton
-            icon="i-lucide-arrow-left"
-            color="neutral"
-            variant="ghost"
-            :to="`/contracts/${contractId}`"
-            :aria-label="S.common.back"
-          />
+          <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" :to="`/contracts/${contractId}`"
+            :aria-label="S.common.back" />
         </template>
         <template #right>
           <div class="flex items-center gap-2">
-            <UButton
-              v-if="canUpload"
-              icon="i-lucide-upload"
-              size="sm"
-              color="neutral"
-              variant="outline"
-              @click="($refs.fileInput as HTMLInputElement).click()"
-            >
+            <UButton v-if="canUpload" icon="i-lucide-upload" size="sm" color="neutral" variant="outline"
+              @click="($refs.fileInput as HTMLInputElement).click()">
               {{ F.actions.upload }}
             </UButton>
-            <UButton
-              v-if="canUpload"
-              icon="i-lucide-folder-plus"
-              size="sm"
-              color="neutral"
-              variant="outline"
-              @click="startNewFolder"
-            >
+            <UButton v-if="canUpload" icon="i-lucide-folder-plus" size="sm" color="neutral" variant="outline"
+              @click="startNewFolder">
               {{ F.actions.newFolder }}
             </UButton>
           </div>
@@ -390,57 +373,40 @@ function fileIcon(mime: string): string {
       <nav class="mb-3 flex flex-wrap items-center gap-1 text-sm">
         <template v-for="(crumb, idx) in breadcrumbs" :key="crumb.id ?? 'root'">
           <span v-if="idx > 0" class="text-muted">/</span>
-          <button
-            class="rounded px-1.5 py-0.5 transition-colors hover:bg-elevated"
+          <button class="rounded px-1.5 py-0.5 transition-colors hover:bg-elevated"
             :class="idx === breadcrumbs.length - 1 ? 'font-medium text-highlighted' : 'text-muted'"
-            @click="navigateTo(crumb.id)"
-          >
+            @click="navigateTo(crumb.id)">
             {{ crumb.name }}
           </button>
         </template>
       </nav>
 
       <!-- Upload progress panel -->
-      <div
-        v-if="uploadQueue.length"
-        class="mb-3 rounded-lg border border-default bg-elevated/50 p-3"
-      >
+      <div v-if="uploadQueue.length" class="mb-3 rounded-lg border border-default bg-elevated/50 p-3">
         <div class="mb-2 flex items-center justify-between text-xs font-medium text-muted">
           <span>Subidas</span>
-          <UButton
-            v-if="recentUploads.length"
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            @click="dismissUploads"
-          >
+          <UButton v-if="recentUploads.length" size="xs" color="neutral" variant="ghost" @click="dismissUploads">
             Limpiar
           </UButton>
         </div>
         <ul class="space-y-1.5">
-          <li
-            v-for="entry in uploadQueue"
-            :key="entry.id"
-            class="flex items-center gap-2.5 text-sm"
-          >
-            <UIcon
-              :name="entry.status === 'done'      ? 'i-lucide-check-circle-2'
-                    : entry.status === 'error'    ? 'i-lucide-alert-circle'
-                    : entry.status === 'uploading' ? 'i-lucide-loader-circle'
-                    : 'i-lucide-file'"
-              class="size-4 shrink-0"
-              :class="entry.status === 'done'     ? 'text-success'
-                    : entry.status === 'error'    ? 'text-error'
-                    : entry.status === 'uploading' ? 'text-primary animate-spin'
-                    : 'text-muted'"
-            />
+          <li v-for="entry in uploadQueue" :key="entry.id" class="flex items-center gap-2.5 text-sm">
+            <UIcon :name="entry.status === 'done' ? 'i-lucide-check-circle-2'
+              : entry.status === 'error' ? 'i-lucide-alert-circle'
+                : entry.status === 'uploading' ? 'i-lucide-loader-circle'
+                  : 'i-lucide-file'" class="size-4 shrink-0" :class="entry.status === 'done' ? 'text-success'
+                      : entry.status === 'error' ? 'text-error'
+                        : entry.status === 'uploading' ? 'text-primary animate-spin'
+                          : 'text-muted'" />
             <div class="min-w-0 flex-1">
               <div class="flex items-center justify-between gap-2">
                 <span class="truncate text-highlighted">{{ entry.file.name }}</span>
                 <span class="shrink-0 text-xs text-muted">{{ formatBytes(entry.file.size) }}</span>
               </div>
-              <div v-if="entry.status === 'uploading'" class="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-default">
-                <div class="h-full rounded-full bg-primary transition-all" :style="`width:${Math.round(entry.progress * 100)}%`" />
+              <div v-if="entry.status === 'uploading'"
+                class="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-default">
+                <div class="h-full rounded-full bg-primary transition-all"
+                  :style="`width:${Math.round(entry.progress * 100)}%`" />
               </div>
               <p v-if="entry.errorMsg" class="text-xs text-error">{{ entry.errorMsg }}</p>
             </div>
@@ -449,20 +415,13 @@ function fileIcon(mime: string): string {
       </div>
 
       <!-- Main drop zone (uploads to current folder when dropped on empty space) -->
-      <div
-        class="relative min-h-[calc(100vh-16rem)] rounded-xl border-2 transition-colors"
-        :class="isDragging && !dragOverFolderId
-          ? 'border-primary bg-primary/5 border-dashed'
-          : 'border-transparent'"
-        @dragover.prevent="isDragging = true; dragOverFolderId = null"
-        @dragleave.prevent="isDragging = false"
-        @drop.prevent="onDrop($event, null)"
-      >
+      <div class="relative min-h-[calc(100vh-16rem)] rounded-xl border-2 transition-colors" :class="isDragging && !dragOverFolderId
+        ? 'border-primary bg-primary/5 border-dashed'
+        : 'border-transparent'" @dragover.prevent="isDragging = true; dragOverFolderId = null"
+        @dragleave.prevent="isDragging = false" @drop.prevent="onDrop($event, null)">
         <!-- Drop overlay label -->
-        <div
-          v-if="isDragging && !dragOverFolderId"
-          class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl"
-        >
+        <div v-if="isDragging && !dragOverFolderId"
+          class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl">
           <div class="flex flex-col items-center gap-2 text-primary">
             <UIcon name="i-lucide-upload-cloud" class="size-10" />
             <span class="font-medium">{{ F.upload.dropActive }}</span>
@@ -472,15 +431,9 @@ function fileIcon(mime: string): string {
         <!-- New folder input row -->
         <div v-if="newFolderMode" class="mb-3 flex items-center gap-2">
           <UIcon name="i-lucide-folder-plus" class="size-4 shrink-0 text-muted" />
-          <UInput
-            v-model="newFolderName"
-            :placeholder="F.newFolderPlaceholder"
-            autofocus
-            class="w-56"
-            :color="newFolderError ? 'error' : undefined"
-            @keydown.enter="confirmNewFolder"
-            @keydown.escape="newFolderMode = false"
-          />
+          <UInput v-model="newFolderName" :placeholder="F.newFolderPlaceholder" autofocus class="w-56"
+            :color="newFolderError ? 'error' : undefined" @keydown.enter="confirmNewFolder"
+            @keydown.escape="newFolderMode = false" />
           <UButton size="xs" :loading="newFolderLoading" @click="confirmNewFolder">
             {{ F.actions.confirm }}
           </UButton>
@@ -492,36 +445,20 @@ function fileIcon(mime: string): string {
 
         <!-- Subfolder grid -->
         <div v-if="visibleSubfolders.length" class="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <div
-            v-for="folder in visibleSubfolders"
-            :key="folder.id"
+          <div v-for="folder in visibleSubfolders" :key="folder.id"
             class="group relative rounded-lg border border-default bg-default transition-colors hover:bg-elevated"
             :class="dragOverFolderId === folder.id ? 'border-primary bg-primary/5' : ''"
             @dragover.prevent.stop="dragOverFolderId = folder.id; isDragging = false"
-            @dragleave.prevent.stop="dragOverFolderId = null"
-            @drop.prevent.stop="onDrop($event, folder.id)"
-          >
+            @dragleave.prevent.stop="dragOverFolderId = null" @drop.prevent.stop="onDrop($event, folder.id)">
             <!-- Click to navigate -->
-            <button
-              class="flex w-full items-center gap-3 px-3 py-3 text-left"
-              @click="navigateTo(folder.id)"
-            >
-              <UIcon
-                :name="folderIcon(folder)"
-                class="size-5 shrink-0"
-                :class="dragOverFolderId === folder.id ? 'text-primary' : 'text-warning'"
-              />
+            <button class="flex w-full items-center gap-3 px-3 py-3 text-left" @click="navigateTo(folder.id)">
+              <UIcon :name="folderIcon(folder)" class="size-5 shrink-0"
+                :class="dragOverFolderId === folder.id ? 'text-primary' : 'text-warning'" />
               <div class="min-w-0 flex-1">
                 <!-- Rename input -->
                 <div v-if="renaming?.id === folder.id" class="flex items-center gap-1.5" @click.stop>
-                  <UInput
-                    v-model="renameValue"
-                    size="xs"
-                    autofocus
-                    class="w-32"
-                    @keydown.enter="confirmRename"
-                    @keydown.escape="renaming = null"
-                  />
+                  <UInput v-model="renameValue" size="xs" autofocus class="w-32" @keydown.enter="confirmRename"
+                    @keydown.escape="renaming = null" />
                   <UButton size="xs" :loading="renameLoading" @click.stop="confirmRename">✓</UButton>
                   <span v-if="renameError" class="text-xs text-error">{{ renameError }}</span>
                 </div>
@@ -534,26 +471,12 @@ function fileIcon(mime: string): string {
             </button>
 
             <!-- Folder actions (non-predefined only) -->
-            <div
-              v-if="!folder.predefined && canUpload"
-              class="absolute right-2 top-2 hidden items-center gap-1 group-hover:flex"
-            >
-              <UButton
-                icon="i-lucide-pencil"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                :aria-label="F.actions.rename"
-                @click.stop="startRename(folder)"
-              />
-              <UButton
-                icon="i-lucide-trash-2"
-                size="xs"
-                color="error"
-                variant="ghost"
-                :aria-label="F.actions.delete"
-                @click.stop="deletingFolder = folder"
-              />
+            <div v-if="!folder.predefined && canUpload"
+              class="absolute right-2 top-2 hidden items-center gap-1 group-hover:flex">
+              <UButton icon="i-lucide-pencil" size="xs" color="neutral" variant="ghost" :aria-label="F.actions.rename"
+                @click.stop="startRename(folder)" />
+              <UButton icon="i-lucide-trash-2" size="xs" color="error" variant="ghost" :aria-label="F.actions.delete"
+                @click.stop="deletingFolder = folder" />
             </div>
           </div>
         </div>
@@ -576,17 +499,10 @@ function fileIcon(mime: string): string {
                 </tr>
               </thead>
               <tbody class="divide-y divide-default">
-                <tr
-                  v-for="file in currentFiles"
-                  :key="file.id"
-                  class="group transition-colors hover:bg-elevated/40"
-                >
+                <tr v-for="file in currentFiles" :key="file.id" class="group transition-colors hover:bg-elevated/40">
                   <td class="px-3 py-2">
                     <div class="flex items-center gap-2">
-                      <UIcon
-                        :name="fileIcon(file.mimeType)"
-                        class="size-4 shrink-0 text-muted"
-                      />
+                      <UIcon :name="fileIcon(file.mimeType)" class="size-4 shrink-0 text-muted" />
                       <span class="truncate text-highlighted">{{ file.name }}</span>
                     </div>
                   </td>
@@ -596,25 +512,13 @@ function fileIcon(mime: string): string {
                   <td class="px-3 py-2 text-muted">{{ file.uploadedById }}</td>
                   <td class="px-3 py-2 text-muted">{{ formatDate(file.uploadedAt) }}</td>
                   <td class="px-3 py-2">
-                    <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <UButton
-                        icon="i-lucide-download"
-                        size="xs"
-                        color="neutral"
-                        variant="ghost"
-                        :loading="downloadingId === file.id"
-                        :aria-label="F.actions.download"
-                        @click="downloadFile(file)"
-                      />
-                      <UButton
-                        v-if="file.uploadedById === currentUserId"
-                        icon="i-lucide-trash-2"
-                        size="xs"
-                        color="error"
-                        variant="ghost"
-                        :aria-label="F.actions.delete"
-                        @click="deletingFile = file"
-                      />
+                    <div
+                      class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <UButton icon="i-lucide-download" size="xs" color="neutral" variant="ghost"
+                        :loading="downloadingId === file.id" :aria-label="F.actions.download"
+                        @click="downloadFile(file)" />
+                      <UButton v-if="file.uploadedById === currentUserId" icon="i-lucide-trash-2" size="xs"
+                        color="error" variant="ghost" :aria-label="F.actions.delete" @click="deletingFile = file" />
                     </div>
                   </td>
                 </tr>
@@ -624,64 +528,63 @@ function fileIcon(mime: string): string {
         </template>
 
         <!-- Empty state (no subfolders and no files) -->
-        <div
-          v-else-if="!visibleSubfolders.length"
-          class="flex flex-col items-center justify-center py-20 text-center"
+        <div v-else-if="!visibleSubfolders.length" class="flex flex-col items-center justify-center py-20 text-center"
           @click="canUpload && ($refs.fileInput as HTMLInputElement).click()"
-          :class="canUpload ? 'cursor-pointer' : ''"
-        >
+          :class="canUpload ? 'cursor-pointer' : ''">
           <UIcon name="i-lucide-folder-open" class="mb-3 size-10 text-muted" />
           <p class="text-sm text-muted">{{ F.empty }}</p>
           <p v-if="canUpload" class="mt-1 text-xs text-muted">{{ F.upload.dropHere }}</p>
         </div>
 
         <!-- Empty folder but subfolders visible -->
-        <div
-          v-else-if="!filesLoading && !currentFiles.length && currentFolderId"
-          class="mt-2 py-6 text-center text-sm text-muted"
-        >
+        <div v-else-if="!filesLoading && !currentFiles.length && currentFolderId"
+          class="mt-2 py-6 text-center text-sm text-muted">
           {{ F.empty }}
           <span v-if="canUpload"> — {{ F.upload.dropHere }}</span>
         </div>
       </div>
 
       <!-- Delete folder confirmation modal -->
-      <UModal v-model:open="showDeleteFolder" :title="F.actions.delete">
-        <template #body>
-          <p class="text-sm text-default">{{ F.deleteFolderConfirm }}</p>
-          <p class="mt-1 font-medium text-highlighted">{{ deletingFolder?.name }}</p>
-          <p v-if="deleteFolderError" class="mt-2 text-xs text-error">{{ deleteFolderError }}</p>
-        </template>
-        <template #footer>
-          <div class="flex w-full justify-end gap-3">
-            <UButton color="neutral" variant="ghost" @click="deletingFolder = null">
-              {{ F.actions.cancel }}
-            </UButton>
-            <UButton color="error" :loading="deleteFolderLoading" @click="confirmDeleteFolder">
-              {{ F.actions.delete }}
-            </UButton>
-          </div>
-        </template>
-      </UModal>
 
       <!-- Delete file confirmation modal -->
-      <UModal v-model:open="showDeleteFile" :title="F.actions.delete">
-        <template #body>
-          <p class="text-sm text-default">{{ F.deleteFileConfirm }}</p>
-          <p class="mt-1 font-medium text-highlighted">{{ deletingFile?.name }}</p>
-          <p v-if="deleteFileError" class="mt-2 text-xs text-error">{{ deleteFileError }}</p>
-        </template>
-        <template #footer>
-          <div class="flex w-full justify-end gap-3">
-            <UButton color="neutral" variant="ghost" @click="deletingFile = null">
-              {{ F.actions.cancel }}
-            </UButton>
-            <UButton color="error" :loading="deleteFileLoading" @click="confirmDeleteFile">
-              {{ F.actions.delete }}
-            </UButton>
-          </div>
-        </template>
-      </UModal>
+
     </template>
   </UDashboardPanel>
+
+
+  <UModal v-model:open="showDeleteFolder" :title="F.actions.delete">
+    <template #body>
+      <p class="text-sm text-default">{{ F.deleteFolderConfirm }}</p>
+      <p class="mt-1 font-medium text-highlighted">{{ deletingFolder?.name }}</p>
+      <p v-if="deleteFolderError" class="mt-2 text-xs text-error">{{ deleteFolderError }}</p>
+    </template>
+    <template #footer>
+      <div class="flex w-full justify-end gap-3">
+        <UButton color="neutral" variant="ghost" @click="deletingFolder = null">
+          {{ F.actions.cancel }}
+        </UButton>
+        <UButton color="error" :loading="deleteFolderLoading" @click="confirmDeleteFolder">
+          {{ F.actions.delete }}
+        </UButton>
+      </div>
+    </template>
+  </UModal>
+
+  <UModal v-model:open="showDeleteFile" :title="F.actions.delete">
+    <template #body>
+      <p class="text-sm text-default">{{ F.deleteFileConfirm }}</p>
+      <p class="mt-1 font-medium text-highlighted">{{ deletingFile?.name }}</p>
+      <p v-if="deleteFileError" class="mt-2 text-xs text-error">{{ deleteFileError }}</p>
+    </template>
+    <template #footer>
+      <div class="flex w-full justify-end gap-3">
+        <UButton color="neutral" variant="ghost" @click="deletingFile = null">
+          {{ F.actions.cancel }}
+        </UButton>
+        <UButton color="error" :loading="deleteFileLoading" @click="confirmDeleteFile">
+          {{ F.actions.delete }}
+        </UButton>
+      </div>
+    </template>
+  </UModal>
 </template>

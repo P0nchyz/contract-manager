@@ -9,7 +9,7 @@ import type {
 
 // Predefined folders exist from the start (e.g. contract files, evidence);
 // users may also create their own ('custom').
-export type FolderKind = 'contract' | 'evidence' | 'payments' | 'custom'
+export type FolderKind = 'contract' | 'evidence' | 'payments' | 'hoja_generadora' | 'custom'
 
 /**
  * A folder in a contract's file explorer. Supports nesting via parentId.

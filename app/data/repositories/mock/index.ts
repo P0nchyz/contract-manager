@@ -8,15 +8,20 @@
  * draft estimates visible to the resident only.
  */
 import * as seed from '../../mock/seed'
-import { buildLineItem, buildSummary } from '../../calc/estimate'
+import { buildLineItems, buildSummary } from '../../calc/estimate'
 import { RepositoryError, notFound } from '../../errors'
 import type {
   Alert,
   Concept,
+  ConceptId,
   ConceptSection,
+  ConceptScheduleEntry,
+  ContractId,
   Contract,
+  Corporation,
   Estimate,
   EstimateCover,
+  EvidenceNote,
   FiniquitoStatement,
   LogNote,
   ModificationAgreement,
@@ -27,15 +32,16 @@ import type {
   UserId,
   WorkflowAction,
   WorkflowEvent,
+  WorkSchedule,
 } from '../../models'
 import type { ConceptChange, NewConceptDraft, NewSectionDraft } from '../../models/agreements'
 import { SIGNING_ROLES } from '../../models'
 import type {
   Repositories,
+  AssignRolesInput,
   CreateAgreementInput,
   CreateConceptInput,
   CreateConceptSectionInput,
-  NewSectionDraft,
   CreateContractInput,
   CreateCorporationInput,
   CreateEstimateInput,
@@ -64,7 +70,7 @@ function replacer(_key: string, value: unknown): unknown {
 
 function reviver(_key: string, value: unknown): unknown {
   if (value && typeof value === 'object' && DATE_TAG in (value as object)) {
-    return new Date((value as Record<string, string>)[DATE_TAG])
+    return new Date((value as Record<string, string>)[DATE_TAG]!)
   }
   return value
 }
@@ -93,6 +99,51 @@ function loadDb<T extends object>(fallback: T): T {
         }
       }
     }
+    // Migrate old estimate shape: ensure hojas/summary/sectionNotes exist
+    if (Array.isArray(parsed.estimates)) {
+      const emptyCalc = { ivaRate: 16, estimateAmount: 0, estimateIva: 0, estimateTotal: 0, anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, retentions: 0, cincoAlMillarSfp: 0, total: 0 }
+      for (const e of parsed.estimates as Record<string, unknown>[]) {
+        if (!e.hojas) e.hojas = []
+        if (!e.lineItems) e.lineItems = []
+        if (!e.summary) e.summary = { partidas: [], partidasSubtotal: 0, calculations: emptyCalc }
+        if (!(e.summary as Record<string, unknown>).calculations) (e.summary as Record<string, unknown>).calculations = emptyCalc
+        if (!e.sectionNotes) e.sectionNotes = {}
+      }
+    }
+    // Migrate old estimate shape → Hoja-based model
+    if (Array.isArray(parsed.estimates)) {
+      for (const e of parsed.estimates as Record<string, unknown>[]) {
+        if (!Array.isArray(e.hojas)) e.hojas = []
+        if (!e.sectionNotes) e.sectionNotes = {}
+        if (!e.cover || typeof e.cover !== 'object') {
+          e.cover = {
+            entityName: '', contractCode: '', contractTitle: '',
+            contractStartDate: new Date(), contractorName: '',
+            contractorRfc: null, estimateNumber: e.number ?? 0,
+            periodIndex: e.periodIndex ?? 1,
+            periodStart: e.periodStart ?? new Date(),
+            periodEnd: e.periodEnd ?? new Date(),
+          }
+        } else {
+          const cov = e.cover as Record<string, unknown>
+          if (!cov.entityName) cov.entityName = ''
+          if (!cov.contractStartDate) cov.contractStartDate = new Date()
+          if (cov.contractorRfc === undefined) cov.contractorRfc = null
+        }
+        if (!e.summary || typeof e.summary !== 'object') {
+          e.summary = { partidas: [], partidasSubtotal: 0, calculations: { ivaRate: 16, estimateAmount: 0, estimateIva: 0, estimateTotal: 0, anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, retentions: 0, cincoAlMillarSfp: 0, total: 0 } }
+        } else {
+          const sum = e.summary as Record<string, unknown>
+          if (!Array.isArray(sum.partidas)) sum.partidas = []
+          if (typeof sum.partidasSubtotal !== 'number') sum.partidasSubtotal = (sum as any).conceptSummary?.subtotal ?? 0
+          // Migrate calculations.rows → no longer needed
+          if (sum.calculations && typeof sum.calculations === 'object') {
+            delete (sum.calculations as Record<string, unknown>).rows
+          }
+        }
+        if (!Array.isArray(e.lineItems)) e.lineItems = []
+      }
+    }
     return parsed as T
   } catch {
     return fallback
@@ -118,7 +169,7 @@ function buildContractPeriods(contract: Contract): { start: Date; end: Date }[] 
     const cutoffs = periodicity === 'monthly'
       ? [lastDay]
       : [new Date(y, m, 15), lastDay]
-    const cutoff = cutoffs.find((c) => c >= curStart) ?? cutoffs[cutoffs.length - 1]
+    const cutoff = cutoffs.find((c) => c >= curStart) ?? cutoffs[cutoffs.length - 1]!
     const periodEnd = cutoff > contractEnd ? new Date(contractEnd) : new Date(cutoff)
     periods.push({ start: new Date(curStart), end: periodEnd })
     if (periodEnd >= contractEnd) break
@@ -195,6 +246,39 @@ export function createMockRepositories(): Repositories {
     slot.signedAt = new Date()
     slot.status = 'signed'
     return signatures
+  }
+
+  // --- estimate derivation helpers (closures; no `this` binding) ----------
+  function upToLastByConcept(
+    contractId: string,
+    periodIndex: number,
+    excludeId: string,
+  ): Record<string, number> {
+    const map: Record<string, number> = {}
+    for (const e of db.estimates) {
+      if (e.contractId !== contractId) continue
+      if (e.id === excludeId) continue
+      if (e.periodIndex >= periodIndex) continue
+      if (e.status !== 'approved' && e.status !== 'paid') continue
+      for (const li of (e.lineItems ?? [])) {
+        map[String(li.conceptId)] = (map[String(li.conceptId)] ?? 0) + li.inThisEstimate
+      }
+    }
+    return map
+  }
+  function recomputeEstimate(e: Estimate): void {
+    const contract = db.contracts.find((c) => c.id === e.contractId)
+    const catalog = db.concepts.filter((c) => c.contractId === e.contractId)
+    const sections = db.conceptSections.filter((s) => s.contractId === e.contractId)
+    const upToLast = upToLastByConcept(e.contractId, e.periodIndex, e.id)
+    const safeHojas = e.hojas ?? []
+    e.lineItems = buildLineItems(safeHojas, catalog, upToLast)
+    e.summary = buildSummary(e.lineItems, safeHojas, sections, {
+      ivaRate: contract?.ivaRate ?? 16,
+      retentionPercentage: contract?.retentionPercentage ?? 5,
+      cincoAlMillarRate: 0.5,
+      anticipoPercentage: contract?.anticipoPercentage ?? 0,
+    })
   }
 
   return {
@@ -314,18 +398,25 @@ export function createMockRepositories(): Repositories {
         const scheduleEntries = (input.scheduleEntries ?? []).map((se) => ({
           id: genId('SE'),
           contractId,
-          conceptId: createdConcepts[se.conceptIndex]?.id ?? null,
+          conceptId: createdConcepts[se.conceptIndex]?.id ?? ('' as ConceptId),
           periodIndex: se.periodIndex,
           plannedQuantity: se.plannedQuantity,
         }))
         db.schedules.push({ id: genId('SCH'), contractId, entries: scheduleEntries })
         save()
 
-        // Seed the three predefined folders every new contract gets.
+        // Seed the predefined folders every new contract gets.
+        const evidenceFolderId = genId('FD')
         db.folders.push(
           { id: genId('FD'), contractId, name: 'Documentos del contrato', parentId: null, kind: 'contract',  predefined: true },
-          { id: genId('FD'), contractId, name: 'Evidencias',              parentId: null, kind: 'evidence',  predefined: true },
+          { id: evidenceFolderId, contractId, name: 'Evidencias',         parentId: null, kind: 'evidence',  predefined: true },
           { id: genId('FD'), contractId, name: 'Comprobantes de pago',    parentId: null, kind: 'payments',  predefined: true },
+        )
+        // Evidencias/estimaciones/hojas-generadoras subfolder hierarchy
+        const estimacionesFolderId = genId('FD')
+        db.folders.push(
+          { id: estimacionesFolderId, contractId, name: 'Estimaciones', parentId: evidenceFolderId, kind: 'custom', predefined: true },
+          { id: genId('FD'), contractId, name: 'Hojas generadoras', parentId: estimacionesFolderId, kind: 'hoja_generadora', predefined: true },
         )
         save()
 
@@ -383,7 +474,7 @@ export function createMockRepositories(): Repositories {
           const net = est.summary?.calculations?.total ?? 0
           executedAmount += net
           if (isPaid) paidAmount += net
-          for (const li of est.lineItems) {
+          for (const li of (est.lineItems ?? [])) {
             if (isExecuted) {
               physQty[li.conceptId] = (physQty[li.conceptId] ?? 0) + li.inThisEstimate
             }
@@ -485,48 +576,33 @@ export function createMockRepositories(): Repositories {
         const contract = db.contracts.find((c) => c.id === input.contractId)
         if (!contract) throw notFound('Contrato')
         const corp = db.corporations.find((c) => c.id === contract.contractorCorporationId)
-        const catalog = db.concepts.filter((c) => c.contractId === input.contractId)
+        const entity = db.users.find((u) => u.id === contract.entityId)
         const prior = db.estimates.filter((e) => e.contractId === input.contractId)
 
-        // Validate: no other estimate exists for this period
-        const duplicate = prior.find((e) => e.periodIndex === input.periodIndex)
-        if (duplicate) throw new RepositoryError(409, `Ya existe una estimación para el período ${input.periodIndex}`, 'duplicate_period')
+        // Only APPROVED/paid estimates claim a period. Multiple drafts allowed.
+        const approvedForPeriod = prior.find(
+          (e) => e.periodIndex === input.periodIndex && (e.status === 'approved' || e.status === 'paid'),
+        )
+        if (approvedForPeriod) {
+          throw new RepositoryError(409, `Ya existe una estimación aprobada para el período ${input.periodIndex}`, 'duplicate_period')
+        }
 
-        // Derive period dates from the contract periodicity
         const periods = buildContractPeriods(contract)
-        const periodDates = periods[input.periodIndex - 1] // 1-based → 0-based
+        const periodDates = periods[input.periodIndex - 1]
         if (!periodDates) throw new RepositoryError(400, 'Período inválido', 'invalid_period')
-        const periodStart = periodDates.start
-        const periodEnd   = periodDates.end
 
-        // upToLast = quantities from all non-rejected, non-draft estimates EXCEPT the current period
-        const lineItems = input.lineItems.map((li, i) => {
-          const concept = catalog.find((c) => c.id === li.conceptId)
-          if (!concept) throw notFound(`Concepto ${li.conceptId}`)
-          const upToLast = prior
-            .filter((e) => e.status !== 'draft' && e.status !== 'rejected')
-            .reduce(
-              (s, e) => s + (e.lineItems.find((x) => x.conceptId === li.conceptId)?.inThisEstimate ?? 0),
-              0,
-            )
-          return buildLineItem(concept, li.inThisEstimate, upToLast, i + 1)
-        })
-        const summary = buildSummary(lineItems, {
-          ivaRate: contract.ivaRate ?? 16,
-          retentionPercentage: contract.retentionPercentage ?? 5,
-          cincoAlMillarRate: 0.5,
-          anticipoPercentage: contract.anticipoPercentage,
-        })
-        const number = input.periodIndex // period number IS the estimate number
+        const number = input.periodIndex
         const cover: EstimateCover = {
+          entityName: entity?.fullName ?? '',
           contractCode: contract.code,
           contractTitle: contract.title,
+          contractStartDate: contract.startDate,
           contractorName: corp?.name ?? '',
-          contractorCorporationId: contract.contractorCorporationId,
+          contractorRfc: corp?.rfc ?? null,
           estimateNumber: number,
           periodIndex: input.periodIndex,
-          periodStart,
-          periodEnd,
+          periodStart: periodDates.start,
+          periodEnd: periodDates.end,
         }
         const now = new Date()
         const estimate: Estimate = {
@@ -535,19 +611,24 @@ export function createMockRepositories(): Repositories {
           number,
           periodIndex: input.periodIndex,
           status: 'draft',
-          periodStart,
-          periodEnd,
+          periodStart: periodDates.start,
+          periodEnd: periodDates.end,
           cover,
-          lineItems,
-          summary,
+          hojas: [],
+          lineItems: [],
+          summary: { partidas: [], partidasSubtotal: 0, calculations: {
+            ivaRate: contract.ivaRate ?? 16, estimateAmount: 0, estimateIva: 0, estimateTotal: 0,
+            anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, retentions: 0,
+            cincoAlMillarSfp: 0, total: 0,
+          } },
+          sectionNotes: {},
           signatures: pendingSignatures(),
           history: [event('created')],
-          evidenceFileIds: input.evidenceFileIds ?? [],
-          linkedLogNoteIds: input.linkedLogNoteIds ?? [],
           createdById: currentUserId,
           createdAt: now,
           updatedAt: now,
         }
+        recomputeEstimate(estimate)
         db.estimates.push(estimate)
         save()
         return clone(estimate)
@@ -556,49 +637,118 @@ export function createMockRepositories(): Repositories {
         await delay()
         const e = db.estimates.find((x) => x.id === id)
         if (!e) throw notFound('Estimación')
-        const EDITABLE = ['draft', 'with_notes'] // rejected is final — cannot be re-edited
-        if (!EDITABLE.includes(e.status)) {
-          throw new RepositoryError(409, 'Solo se editan borradores o estimaciones devueltas con notas', 'not_editable')
+        // Only drafts are editable. with_notes/rejected are final.
+        if (e.status !== 'draft') {
+          throw new RepositoryError(409, 'Solo se pueden editar borradores', 'not_editable')
         }
-        const wasReturned = e.status === 'with_notes'
         const contract = db.contracts.find((c) => c.id === e.contractId)!
         const catalog = db.concepts.filter((c) => c.contractId === e.contractId)
-        const prior = db.estimates.filter((x) => x.contractId === e.contractId && x.id !== e.id)
-        e.lineItems = input.lineItems.map((li, i) => {
-          const concept = catalog.find((c) => c.id === li.conceptId)
-          if (!concept) throw notFound(`Concepto ${li.conceptId}`)
-          const upToLast = prior.reduce(
-            (s, x) => s + (x.lineItems.find((y) => y.conceptId === li.conceptId)?.inThisEstimate ?? 0),
-            0,
+        const sections = db.conceptSections.filter((s) => s.contractId === e.contractId)
+
+        // Schedule guard: a concept must have plannedQuantity>0 for this period
+        const schedule = db.schedules.find((s) => s.contractId === e.contractId)
+        const plannedFor = (conceptId: string) => {
+          const entry = (schedule?.entries ?? []).find(
+            (en) => String(en.conceptId) === String(conceptId) && en.periodIndex === e.periodIndex - 1,
           )
-          return buildLineItem(concept, li.inThisEstimate, upToLast, i + 1)
-        })
-        e.summary = buildSummary(e.lineItems, {
-          ivaRate: contract.ivaRate ?? 16,
-          retentionPercentage: contract.retentionPercentage ?? 5,
-          cincoAlMillarRate: 0.5,
-          anticipoPercentage: contract.anticipoPercentage,
-        })
-        // periodIndex handled via re-create; dates derived from periodIndex
-        if (input.evidenceFileIds) e.evidenceFileIds = input.evidenceFileIds
-        if (input.linkedLogNoteIds) e.linkedLogNoteIds = input.linkedLogNoteIds
-        // Editing a returned/rejected estimate sends it back to draft (loop closed).
-        if (wasReturned) {
-          e.status = 'draft'
-          e.history.push(event('reopened'))
+          return entry ? entry.plannedQuantity : 0
         }
+
+        // Build hojas from input
+        const hojas = input.hojas.map((hi, i) => {
+          const concept = catalog.find((c) => String(c.id) === String(hi.conceptId))
+          if (!concept) throw notFound(`Concepto ${hi.conceptId}`)
+          if (!concept.sectionId) {
+            throw new RepositoryError(409, `El concepto ${concept.specificationNumber} no tiene partida asignada`, 'concept_without_section')
+          }
+          if (plannedFor(hi.conceptId) <= 0) {
+            throw new RepositoryError(409, `El concepto ${concept.specificationNumber} no está programado para este período`, 'concept_not_scheduled')
+          }
+          return {
+            id: hi.id ?? genId('HG'),
+            number: i + 1,
+            conceptId: concept.id,
+            specificationNumber: concept.specificationNumber,
+            description: concept.description,
+            unit: concept.unit,
+            sectionId: concept.sectionId,
+            contractedQuantity: concept.contractedQuantity,
+            unitPrice: concept.unitPrice,
+            rows: hi.rows.map((r) => ({
+              id: r.id ?? genId('HR'),
+              quantity: Number.isFinite(r.quantity) ? r.quantity : 0,
+              photoFileId: r.photoFileId ?? null,
+              fileIds: r.fileIds ?? [],
+              logNoteIds: r.logNoteIds ?? [],
+            })),
+          }
+        })
+        // Enforce one hoja per concept
+        const seen = new Set()
+        for (const h of hojas) {
+          if (seen.has(String(h.conceptId))) {
+            throw new RepositoryError(409, 'Solo puede haber una Hoja Generadora por concepto', 'duplicate_hoja')
+          }
+          seen.add(String(h.conceptId))
+        }
+        e.hojas = hojas
+        recomputeEstimate(e)
         e.updatedAt = new Date()
         save()
         return clone(e)
       },
+      async delete(id) {
+        await delay()
+        const idx = db.estimates.findIndex((x) => x.id === id)
+        if (idx === -1) throw notFound('Estimación')
+        if ((db.estimates[idx])?.status !== 'draft') {
+          throw new RepositoryError(409, 'Solo se pueden eliminar borradores', 'not_deletable')
+        }
+        db.estimates.splice(idx, 1)
+        save()
+      },
       async submit(id) {
-        return transition(db.estimates, id, 'Estimación', 'submitted', 'submitted')
+        await delay()
+        const e = db.estimates.find((x) => x.id === id)
+        if (!e) throw notFound('Estimación')
+        if (e.status !== 'draft') throw new RepositoryError(409, 'Solo se envían borradores', 'wrong_status')
+        if (!(e.hojas ?? []).length) throw new RepositoryError(409, 'Agrega al menos una Hoja Generadora', 'no_hojas')
+        // Every row needs a photo to submit
+        for (const h of (e.hojas ?? [])) {
+          for (const r of h.rows) {
+            if (!r.photoFileId) {
+              throw new RepositoryError(409, `La Hoja ${h.number} tiene una partida sin fotografía`, 'photo_required')
+            }
+          }
+        }
+        // Block if another submitted/approved estimate holds this period
+        const claimed = db.estimates.find(
+          (x) => x.contractId === e.contractId && x.id !== e.id && x.periodIndex === e.periodIndex &&
+            (x.status === 'submitted' || x.status === 'approved' || x.status === 'paid'),
+        )
+        if (claimed) {
+          throw new RepositoryError(409, 'Ya hay una estimación en proceso para este período', 'period_claimed')
+        }
+        e.status = 'submitted'
+        e.history.push(event('submitted'))
+        e.updatedAt = new Date()
+        save()
+        return clone(e)
       },
       async approve(id) {
         return transition(db.estimates, id, 'Estimación', 'approved', 'approved')
       },
-      async returnWithNotes(id, note) {
-        return transition(db.estimates, id, 'Estimación', 'with_notes', 'returned_with_notes', note)
+      async returnWithNotes(id, notes) {
+        await delay()
+        const e = db.estimates.find((x) => x.id === id)
+        if (!e) throw notFound('Estimación')
+        if (e.status !== 'submitted') throw new RepositoryError(409, 'Solo se devuelve una estimación enviada', 'wrong_status')
+        e.status = 'with_notes'
+        e.sectionNotes = notes ?? {}
+        e.history.push(event('returned_with_notes'))
+        e.updatedAt = new Date()
+        save()
+        return clone(e)
       },
       async reject(id, note) {
         return transition(db.estimates, id, 'Estimación', 'rejected', 'rejected', note)
@@ -608,9 +758,9 @@ export function createMockRepositories(): Repositories {
         const e = db.estimates.find((x) => x.id === id)
         if (!e) throw notFound('Estimación')
         e.status = 'paid'
-        if (paymentEvidenceFileId) e.evidenceFileIds.push(paymentEvidenceFileId)
         e.history.push(event('paid'))
         e.updatedAt = new Date()
+        void paymentEvidenceFileId
         save()
         return clone(e)
       },
@@ -618,16 +768,13 @@ export function createMockRepositories(): Repositories {
         await delay()
         const e = db.estimates.find((x) => x.id === id)
         if (!e) throw notFound('Estimación')
-        // Signing is only allowed on submitted estimates.
         if (e.status !== 'submitted') {
           throw new RepositoryError(409, 'Solo se firma una estimación enviada', 'wrong_status')
         }
         applySignature(e.signatures)
         e.history.push(event('signed'))
-        // Auto-approve once every signing slot is filled.
         const allSigned = e.signatures.every((s) => s.status === 'signed')
         if (allSigned) {
-          // Sequential approval: all prior period estimates must be approved or paid
           const priorEstimates = db.estimates.filter(
             (x) => x.contractId === e.contractId && x.periodIndex < e.periodIndex,
           )
@@ -910,11 +1057,11 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
     },
 
     // --- reception ---------------------------------------------------------
-    reception: makeCloseFlow<ReceptionStatement>(db.reception, 'Acta de recepción', () => currentUserId, pendingSignatures, event, applySignature, 'R'),
+    reception: makeCloseFlow<ReceptionStatement>(db.reception, 'Acta de recepción', () => currentUserId, pendingSignatures, event, applySignature, 'R', db, save),
 
     // --- finiquito ---------------------------------------------------------
     finiquito: {
-      ...makeCloseFlow<FiniquitoStatement>(db.finiquito, 'Finiquito', () => currentUserId, pendingSignatures, event, applySignature, 'F'),
+      ...makeCloseFlow<FiniquitoStatement>(db.finiquito, 'Finiquito', () => currentUserId, pendingSignatures, event, applySignature, 'F', db, save),
       async initiate(contractId: string) {
         await delay()
         const rec = db.reception.find((r) => r.contractId === contractId)
@@ -947,27 +1094,22 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
         if (!s) throw notFound('Programa de obra')
         return clone(s)
       },
-      async updateItem(itemId, patch) {
+      async upsertEntry(contractId: ContractId, conceptId: ConceptId, periodIndex: number, plannedQuantity: number) {
         await delay()
-        for (const s of db.schedules) {
-          const item = s.items.find((i) => i.id === itemId)
-          if (item) {
-            Object.assign(item, patch)
-            save()
-            return clone(item)
-          }
+        let s = db.schedules.find((x: WorkSchedule) => x.contractId === contractId)
+        if (!s) {
+          s = { id: genId('SCH'), contractId, entries: [] }
+          db.schedules.push(s)
         }
-        throw notFound('Elemento de programa')
-      },
-      async create(contractId, items) {
-        await delay()
-        const schedule = {
-          id: genId('SCH'),
-          contractId,
-          items: items.map((item) => ({ id: genId('SI'), contractId, ...item })),
+        const existing = (s.entries as ConceptScheduleEntry[]).find(
+          (e) => String(e.conceptId) === String(conceptId) && e.periodIndex === periodIndex,
+        )
+        if (existing) {
+          existing.plannedQuantity = plannedQuantity
+        } else {
+          s.entries.push({ id: genId('SE'), contractId, conceptId, periodIndex, plannedQuantity })
         }
-        db.schedules.push(schedule)
-        return clone(schedule)
+        save()
       },
     },
 
@@ -1211,6 +1353,9 @@ function makeCloseFlow<T extends CloseEntity>(
   event: (a: WorkflowAction, n?: string) => WorkflowEvent,
   sign: (s: Signature[]) => Signature[],
   idPrefix: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  save: () => void,
 ) {
   const delayLocal = (ms = 150) => new Promise<void>((r) => setTimeout(r, ms))
   const cloneLocal = <V>(v: V): V => structuredClone(v)
@@ -1253,7 +1398,7 @@ function makeCloseFlow<T extends CloseEntity>(
     },
     async approve(id: string) {
       await delayLocal()
-      const user = db.users.find((u) => u.id === me())
+      const user = (db.users as User[]).find((u) => u.id === me())
       if (user?.role !== 'entity') throw new RepositoryError(403, 'Solo la entidad puede aprobar', 'forbidden')
       const e = find(id)
       if (e.status !== 'pending_entity') throw new RepositoryError(409, 'El documento debe estar pendiente de aprobación de entidad', 'wrong_status')
