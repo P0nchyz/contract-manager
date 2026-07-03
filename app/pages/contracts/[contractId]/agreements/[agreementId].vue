@@ -1,9 +1,10 @@
 <!-- app/pages/contracts/[contractId]/agreements/[agreementId].vue -->
 <script setup lang="ts">
+import { ref } from 'vue'
 import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
 import { agreementStatusDisplay } from '~/utils/format'
-import type { UserId } from '~/data/models'
+import type { UserId, FileAsset } from '~/data/models'
 
 definePageMeta({ requiredPermission: 'estimate:view' })
 
@@ -19,11 +20,12 @@ const agreementId = computed(() => route.params.agreementId as string)
 const { data, status, error, refresh } = await useAsyncData(
   () => `agreement-${agreementId.value}`,
   async () => {
-    const [agreement, users, concepts, schedule] = await Promise.all([
+    const [agreement, users, concepts, schedule, files] = await Promise.all([
       repos.agreements.getById(agreementId.value),
       repos.users.list().catch(() => []),
       repos.concepts.listByContract(route.params.contractId as string).catch(() => []),
       repos.schedule.getByContract(route.params.contractId as string).catch(() => null),
+      repos.files.listFiles(route.params.contractId as string).catch(() => []),
     ])
     const names: Record<string, string> = {}
     for (const u of users) names[u.id] = u.fullName
@@ -34,7 +36,8 @@ const { data, status, error, refresh } = await useAsyncData(
         if (entry.conceptId) scheduleByConceptId[String(entry.conceptId)] = entry
       }
     }
-    return { agreement, names, concepts, scheduleByConceptId }
+    const attachments = files.filter((f) => (agreement.attachmentFileIds ?? []).includes(f.id))
+    return { agreement, names, concepts, scheduleByConceptId, attachments }
   },
 )
 
@@ -43,6 +46,14 @@ const userName = (id: UserId | null | undefined) =>
   (id && data.value?.names[id]) || (id ?? '—')
 const conceptOf = (id: string) => data.value?.concepts.find((c) => c.id === id)
 const scheduleOf = (id: string) => data.value?.scheduleByConceptId[id]
+
+// ─── Viewer ───────────────────────────────────────────────────────────────────
+const viewerOpen = ref(false)
+const viewingFile = ref<FileAsset | null>(null)
+function openViewer(file: FileAsset) {
+  viewingFile.value = file
+  viewerOpen.value = true
+}
 
 // --- Workflow gating (mirrors estimate logic) ---
 const st = computed(() => agreement.value?.status ?? null)
@@ -118,6 +129,11 @@ const editLink = computed(() => ({
   path: `/contracts/${contractId.value}/agreements/new`,
   query: { edit: agreementId.value },
 }))
+
+function formatBytes(n: number) {
+  if (n < 1_048_576) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1_048_576).toFixed(1)} MB`
+}
 </script>
 
 <template>
@@ -221,7 +237,7 @@ const editLink = computed(() => ({
                     </td>
                     <td class="px-3 py-2 text-right tabular-nums text-muted">{{
                       formatMoney(conceptOf(cc.conceptId)?.unitPrice ??
-                      0) }}</td>
+                        0) }}</td>
                     <td class="px-3 py-2 text-right tabular-nums"
                       :class="cc.newUnitPrice != null ? 'font-medium text-success' : 'text-muted'">
                       {{ cc.newUnitPrice != null ? formatMoney(cc.newUnitPrice) : '—' }}
@@ -298,6 +314,21 @@ const editLink = computed(() => ({
                 <dd class="font-medium text-success">{{ formatDate(agreement.newContractEndDate) }}</dd>
               </div>
             </dl>
+          </div>
+
+          <!-- Attachments -->
+          <div v-if="data?.attachments.length" class="mt-5">
+            <div class="mb-2 text-sm font-medium text-default">{{ AG.attachments.title }}</div>
+            <ul class="divide-y divide-default rounded-lg border border-default">
+              <li v-for="file in data.attachments" :key="file.id" class="flex items-center gap-3 px-3 py-2.5">
+                <UIcon :name="fileIcon(file.mimeType)" class="size-4 shrink-0 text-muted" />
+                <button type="button" class="min-w-0 flex-1 truncate text-left text-sm text-highlighted hover:underline"
+                  @click="openViewer(file)">
+                  {{ file.name }}
+                </button>
+                <span class="shrink-0 text-xs text-muted">{{ formatBytes(file.sizeBytes) }}</span>
+              </li>
+            </ul>
           </div>
 
           <UAlert v-if="agreement.status !== 'approved'" class="mt-4" color="neutral" variant="soft"
@@ -410,4 +441,7 @@ const editLink = computed(() => ({
       </div>
     </template>
   </UDashboardPanel>
+
+  <!-- File viewer — must live outside UDashboardPanel -->
+  <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />
 </template>

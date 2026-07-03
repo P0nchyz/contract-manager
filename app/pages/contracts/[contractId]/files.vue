@@ -236,6 +236,14 @@ async function downloadFile(file: FileAsset) {
   }
 }
 
+// ─── Viewer ───────────────────────────────────────────────────────────────────
+const viewerOpen = ref(false)
+const viewingFile = ref<FileAsset | null>(null)
+function openViewer(file: FileAsset) {
+  viewingFile.value = file
+  viewerOpen.value = true
+}
+
 // ─── Upload ───────────────────────────────────────────────────────────────────
 type UploadEntry = {
   id: string
@@ -331,15 +339,6 @@ function formatBytes(n: number) {
   if (n < 1_048_576) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / 1_048_576).toFixed(1)} MB`
 }
-
-function fileIcon(mime: string): string {
-  if (mime.startsWith('image/')) return 'i-lucide-image'
-  if (mime === 'application/pdf') return 'i-lucide-file-text'
-  if (mime.includes('spreadsheet') || mime.includes('excel')) return 'i-lucide-table'
-  if (mime.includes('word') || mime.includes('document')) return 'i-lucide-file-text'
-  if (mime.startsWith('video/')) return 'i-lucide-video'
-  return 'i-lucide-file'
-}
 </script>
 
 <template>
@@ -395,9 +394,9 @@ function fileIcon(mime: string): string {
               : entry.status === 'error' ? 'i-lucide-alert-circle'
                 : entry.status === 'uploading' ? 'i-lucide-loader-circle'
                   : 'i-lucide-file'" class="size-4 shrink-0" :class="entry.status === 'done' ? 'text-success'
-                      : entry.status === 'error' ? 'text-error'
-                        : entry.status === 'uploading' ? 'text-primary animate-spin'
-                          : 'text-muted'" />
+                    : entry.status === 'error' ? 'text-error'
+                      : entry.status === 'uploading' ? 'text-primary animate-spin'
+                        : 'text-muted'" />
             <div class="min-w-0 flex-1">
               <div class="flex items-center justify-between gap-2">
                 <span class="truncate text-highlighted">{{ entry.file.name }}</span>
@@ -501,10 +500,11 @@ function fileIcon(mime: string): string {
               <tbody class="divide-y divide-default">
                 <tr v-for="file in currentFiles" :key="file.id" class="group transition-colors hover:bg-elevated/40">
                   <td class="px-3 py-2">
-                    <div class="flex items-center gap-2">
+                    <button type="button" class="flex items-center gap-2 text-left hover:underline"
+                      @click="openViewer(file)">
                       <UIcon :name="fileIcon(file.mimeType)" class="size-4 shrink-0 text-muted" />
                       <span class="truncate text-highlighted">{{ file.name }}</span>
-                    </div>
+                    </button>
                   </td>
                   <td class="px-3 py-2 text-right tabular-nums text-muted">
                     {{ formatBytes(file.sizeBytes) }}
@@ -587,4 +587,7 @@ function fileIcon(mime: string): string {
       </div>
     </template>
   </UModal>
+
+  <!-- File viewer — must live outside UDashboardPanel -->
+  <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />
 </template>

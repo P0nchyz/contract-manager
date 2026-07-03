@@ -3,7 +3,7 @@
 import { computed } from 'vue'
 import { S } from '~/constants/strings'
 import { formatMoney, formatDate, formatNumber, formatPercent } from '~/utils/format'
-import type { Estimate } from '~/data/models'
+import type { Estimate, FileAsset } from '~/data/models'
 
 const props = defineProps<{
   estimate: Estimate
@@ -13,8 +13,17 @@ const props = defineProps<{
   anticipoPercentage?: number
   // Resolve a file id to a display name (for hoja evidence)
   fileName?: (id: string) => string
+  // Resolve a file id to its full FileAsset (for thumbnails / opening the viewer)
+  fileOf?: (id: string) => FileAsset | null | undefined
   logNoteLabel?: (id: string) => string
 }>()
+
+const emit = defineEmits<{ 'open-file': [file: FileAsset] }>()
+
+function openFile(id: string) {
+  const f = props.fileOf?.(id)
+  if (f) emit('open-file', f)
+}
 
 const D = S.estimateDoc
 const e = computed(() => props.estimate)
@@ -305,7 +314,9 @@ const saldoAmortizar = computed(() => anticipoAmt.value - accumAmort.value)
               <td class="text-right tabular-nums font-medium text-primary">{{ formatNumber(row.quantity) }}</td>
               <td class="text-right tabular-nums">{{ formatNumber(row.quantity) }}</td>
               <td class="text-center">
-                <span v-if="row.photoFileId" class="inline-flex items-center gap-1 text-success">
+                <FileThumbnail v-if="fileOf" :file="fileOf(row.photoFileId ?? '') ?? null" size="sm" required
+                  @click="emit('open-file', $event)" />
+                <span v-else-if="row.photoFileId" class="inline-flex items-center gap-1 text-success">
                   <UIcon name="i-lucide-image" class="size-3.5" />
                   <span class="text-[10px]">{{ fileName ? fileName(row.photoFileId) : 'foto' }}</span>
                 </span>
@@ -326,7 +337,8 @@ const saldoAmortizar = computed(() => anticipoAmt.value - accumAmort.value)
         <template v-for="(row, ri) in hoja.rows" :key="`ev-${row.id}`">
           <div v-if="row.fileIds.length || row.logNoteIds.length" class="flex flex-wrap items-center gap-2">
             <span class="font-medium">Renglón {{ ri + 1 }}:</span>
-            <span v-for="fid in row.fileIds" :key="fid" class="inline-flex items-center gap-1 rounded bg-elevated px-1.5 py-0.5">
+            <span v-for="fid in row.fileIds" :key="fid" class="inline-flex items-center gap-1 rounded bg-elevated px-1.5 py-0.5"
+              :class="fileOf ? 'cursor-pointer hover:bg-elevated/70 transition-colors' : ''" @click="openFile(fid)">
               <UIcon name="i-lucide-paperclip" class="size-3" />{{ fileName ? fileName(fid) : fid }}
             </span>
             <span v-for="lid in row.logNoteIds" :key="lid" class="inline-flex items-center gap-1 rounded bg-elevated px-1.5 py-0.5">

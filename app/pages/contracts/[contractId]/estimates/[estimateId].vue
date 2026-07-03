@@ -4,7 +4,7 @@ import { ref, computed } from 'vue'
 import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
 import { estimateStatusDisplay } from '~/utils/format'
-import type { UserId } from '~/data/models'
+import type { UserId, FileAsset } from '~/data/models'
 
 definePageMeta({ requiredPermission: 'estimate:view' })
 
@@ -36,11 +36,12 @@ const { data, status, error, refresh } = await useAsyncData(
     const nameOf = (id: string | null | undefined) =>
       (id && users.find((u) => u.id === id)?.fullName) || id || '—'
     const fileName = (id: string) => files.find((f) => f.id === id)?.name ?? id
+    const fileOf = (id: string) => files.find((f) => f.id === id) ?? null
     const logNoteLabel = (id: string) => {
       const n = notes.find((x) => x.id === id)
       return n ? `#${n.folio} ${n.title}` : id
     }
-    return { estimate, contract, priorAccum, nameOf, fileName, logNoteLabel }
+    return { estimate, contract, priorAccum, nameOf, fileName, fileOf, logNoteLabel }
   },
 )
 
@@ -102,6 +103,14 @@ const userName = (id: UserId | null | undefined) =>
 function fmtDate(d: Date | string) {
   return new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
 }
+
+// ─── File viewer ──────────────────────────────────────────────────────────────
+const viewerOpen = ref(false)
+const viewingFile = ref<FileAsset | null>(null)
+function openViewer(file: FileAsset) {
+  viewingFile.value = file
+  viewerOpen.value = true
+}
 </script>
 
 <template>
@@ -138,7 +147,8 @@ function fmtDate(d: Date | string) {
           <!-- The document -->
           <EstimateDocument :estimate="estimate" :prior-accum-amount="data!.priorAccum"
             :contract-amount="data!.contract.amount" :anticipo-percentage="data!.contract.anticipoPercentage"
-            :file-name="data!.fileName" :log-note-label="data!.logNoteLabel">
+            :file-name="data!.fileName" :file-of="data!.fileOf" :log-note-label="data!.logNoteLabel"
+            @open-file="openViewer">
             <template #note-cover>
               <UAlert v-if="sectionNotes.cover" class="mb-3" color="warning" variant="soft"
                 icon="i-lucide-message-square-warning" :title="ED.note.cover" :description="sectionNotes.cover" />
@@ -280,4 +290,7 @@ function fmtDate(d: Date | string) {
       </div>
     </template>
   </UModal>
+
+  <!-- File viewer — must live outside UDashboardPanel -->
+  <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />
 </template>

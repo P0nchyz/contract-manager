@@ -4,7 +4,7 @@ import { ref, computed, reactive, watch, watchEffect } from 'vue'
 import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
 import type { ConceptChange, NewConceptDraft, NewSectionDraft } from '~/data/models/agreements'
-import type { ConceptId } from '~/data/models'
+import type { ConceptId, FileAsset } from '~/data/models'
 
 definePageMeta({ requiredPermission: 'agreement:create' })
 
@@ -23,11 +23,13 @@ const toInputDate = (d: Date | string | undefined) =>
 const { data, status, error, refresh } = await useAsyncData(
   () => `agreement-form-${contractId.value}-${editId.value ?? 'new'}`,
   async () => {
-    const [contract, sections, concepts, schedule, editing] = await Promise.all([
+    const [contract, sections, concepts, schedule, folders, files, editing] = await Promise.all([
       repos.contracts.getById(contractId.value),
       repos.concepts.listSectionsByContract(contractId.value),
       repos.concepts.listByContract(contractId.value),
       repos.schedule.getByContract(contractId.value).catch(() => null),
+      repos.files.listFolders(contractId.value).catch(() => []),
+      repos.files.listFiles(contractId.value).catch(() => []),
       editId.value ? repos.agreements.getById(editId.value).catch(() => null) : Promise.resolve(null),
     ])
     // Build a map of conceptId → schedule item for quick lookup
@@ -37,7 +39,7 @@ const { data, status, error, refresh } = await useAsyncData(
         if (entry.conceptId) scheduleByConceptId[String(entry.conceptId)] = entry
       }
     }
-    return { contract, sections, concepts, groups: groupConceptsBySections(sections, concepts), scheduleByConceptId, editing }
+    return { contract, sections, concepts, groups: groupConceptsBySections(sections, concepts), scheduleByConceptId, folders, files, editing }
   },
 )
 
@@ -75,6 +77,7 @@ watchEffect(() => {
     newSections.value = (e.newSections ?? []).map((ns) => ({ ...ns }))
     if (e.newContractStartDate) newContractStartRaw.value = toInputDate(e.newContractStartDate)
     if (e.newContractEndDate) newContractEndRaw.value = toInputDate(e.newContractEndDate)
+    existingAttachmentIds.value = [...(e.attachmentFileIds ?? [])]
   }
   inited.value = true
 })
@@ -141,6 +144,95 @@ function addNewConcept() {
 }
 function removeNewConcept(idx: number) {
   newConcepts.value.splice(idx, 1)
+}
+
+// ─── Attachments ─────────────────────────────────────────────────────────────
+// Already-saved attachments (only populated when editing an existing draft)
+const existingAttachmentIds = ref<string[]>([])
+const existingAttachments = computed(() =>
+  (data.value?.files ?? []).filter((f) => existingAttachmentIds.value.includes(f.id)),
+)
+function removeExistingAttachment(id: string) {
+  existingAttachmentIds.value = existingAttachmentIds.value.filter((x) => x !== id)
+}
+
+// New files queued to upload on save
+type AttachmentEntry = {
+  id: string
+  file: File
+  status: 'queued' | 'uploading' | 'done' | 'error'
+  progress: number
+  uploadedFileId: string | null
+  errorMsg: string | null
+}
+const attachmentEntries = ref<AttachmentEntry[]>([])
+const isDraggingAttachment = ref(false)
+let _attId = 0
+
+function makeAttachmentEntry(f: File): AttachmentEntry {
+  return { id: String(++_attId), file: f, status: 'queued', progress: 0, uploadedFileId: null, errorMsg: null }
+}
+function addAttachments(files: File[]) {
+  attachmentEntries.value.push(...files.map(makeAttachmentEntry))
+}
+function removeAttachmentEntry(id: string) {
+  attachmentEntries.value = attachmentEntries.value.filter((e) => e.id !== id)
+}
+function onAttachmentDrop(e: DragEvent) {
+  isDraggingAttachment.value = false
+  addAttachments(Array.from(e.dataTransfer?.files ?? []))
+}
+function onAttachmentInput(e: Event) {
+  addAttachments(Array.from((e.target as HTMLInputElement).files ?? []))
+    ; (e.target as HTMLInputElement).value = ''
+}
+function formatBytes(n: number) {
+  if (n < 1_048_576) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1_048_576).toFixed(1)} MB`
+}
+
+// ─── Viewer ───────────────────────────────────────────────────────────────────
+const viewerOpen = ref(false)
+const viewingFile = ref<FileAsset | null>(null)
+function openViewer(file: FileAsset) {
+  viewingFile.value = file
+  viewerOpen.value = true
+}
+
+// Upload all queued attachments; returns collected FileIds (existing + newly uploaded)
+async function uploadAttachments(): Promise<string[]> {
+  const contractFolder = (data.value?.folders ?? []).find((f) => f.kind === 'contract')
+  const ids: string[] = [...existingAttachmentIds.value]
+  for (const entry of attachmentEntries.value) {
+    if (entry.status === 'done' && entry.uploadedFileId) {
+      ids.push(entry.uploadedFileId)
+      continue
+    }
+    if (entry.status === 'queued' || entry.status === 'error') {
+      if (!contractFolder) {
+        entry.status = 'error'
+        entry.errorMsg = 'No se encontró la carpeta de documentos del contrato.'
+        continue
+      }
+      entry.status = 'uploading'
+      entry.progress = 0
+      entry.errorMsg = null
+      try {
+        const asset = await repos.files.upload(
+          { contractId: contractId.value, folderId: contractFolder.id, file: entry.file },
+          (p) => { entry.progress = p },
+        )
+        entry.status = 'done'
+        entry.progress = 1
+        entry.uploadedFileId = asset.id
+        ids.push(asset.id)
+      } catch (err) {
+        entry.status = 'error'
+        entry.errorMsg = isRepositoryError(err) ? err.message : S.common.error
+      }
+    }
+  }
+  return ids
 }
 
 // ─── Derived payload ─────────────────────────────────────────────────────────
@@ -260,6 +352,11 @@ async function onSave() {
   loading.value = true
   submitError.value = null
   try {
+    const attachmentFileIds = await uploadAttachments()
+    if (attachmentEntries.value.some((e) => e.status === 'error')) {
+      submitError.value = 'Algunos archivos no pudieron subirse. Corrígelos antes de guardar.'
+      return
+    }
     const payload = {
       description: description.value.trim(),
       conceptChanges: resolvedChanges.value,
@@ -269,6 +366,7 @@ async function onSave() {
       newContractEndDate: newContractEndDate.value,
       amountDelta: derivedAmountDelta.value,
       timeDeltaDays: derivedTimeDelta.value,
+      attachmentFileIds,
     }
     const result = isEdit.value && editId.value
       ? await repos.agreements.update(editId.value, payload)
@@ -329,7 +427,7 @@ async function onSave() {
               <template v-for="group in pickerGroups" :key="group.section?.id ?? 'no-section'">
                 <div class="sticky top-0 flex items-center gap-2 border-b border-default bg-elevated px-3 py-1.5">
                   <span class="font-mono text-xs font-semibold text-muted">{{ group.section?.specificationNumber
-                    }}</span>
+                  }}</span>
                   <span class="text-xs font-semibold text-default">{{ group.section?.description ??
                     S.conceptSections.noSection }}</span>
                   <span v-if="group.section" class="ml-auto text-xs text-muted">
@@ -446,6 +544,73 @@ async function onSave() {
               </div>
             </div>
           </div>
+        </UCard>
+
+        <!-- Attachments -->
+        <UCard>
+          <template #header>
+            <div class="flex items-center gap-2 font-medium">
+              <UIcon name="i-lucide-paperclip" class="size-4 text-muted" />
+              {{ AG.attachments.title }}
+            </div>
+          </template>
+          <p class="mb-3 text-xs text-muted">{{ AG.attachments.hint }}</p>
+
+          <!-- Already-saved attachments (edit mode) -->
+          <ul v-if="existingAttachments.length" class="mb-3 divide-y divide-default rounded-lg border border-default">
+            <li v-for="file in existingAttachments" :key="file.id" class="flex items-center gap-3 px-3 py-2.5">
+              <UIcon :name="fileIcon(file.mimeType)" class="size-4 shrink-0 text-muted" />
+              <button type="button" class="min-w-0 flex-1 truncate text-left text-sm text-highlighted hover:underline"
+                @click="openViewer(file)">
+                {{ file.name }}
+              </button>
+              <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" :aria-label="AG.attachments.remove"
+                @click="removeExistingAttachment(file.id)" />
+            </li>
+          </ul>
+
+          <!-- Drop zone -->
+          <div class="mb-3 cursor-pointer rounded-xl border-2 border-dashed transition-colors"
+            :class="isDraggingAttachment ? 'border-primary bg-primary/5' : 'border-default hover:border-primary/50'"
+            @dragover.prevent="isDraggingAttachment = true" @dragleave.prevent="isDraggingAttachment = false"
+            @drop.prevent="onAttachmentDrop" @click="($refs.attachmentInput as HTMLInputElement).click()">
+            <div class="flex flex-col items-center gap-2 px-4 py-6">
+              <UIcon name="i-lucide-upload-cloud" class="size-7 text-muted" />
+              <p class="text-sm text-muted">
+                {{ isDraggingAttachment ? AG.attachments.dropzoneActive : AG.attachments.dropzone }}
+              </p>
+            </div>
+          </div>
+          <input ref="attachmentInput" type="file" multiple class="sr-only" @change="onAttachmentInput" />
+
+          <!-- New file queue -->
+          <ul v-if="attachmentEntries.length" class="divide-y divide-default rounded-lg border border-default">
+            <li v-for="entry in attachmentEntries" :key="entry.id" class="flex items-center gap-3 px-3 py-2.5">
+              <UIcon :name="entry.status === 'done' ? 'i-lucide-check-circle-2'
+                : entry.status === 'error' ? 'i-lucide-alert-circle'
+                  : entry.status === 'uploading' ? 'i-lucide-loader-circle'
+                    : 'i-lucide-file'" class="size-4 shrink-0" :class="entry.status === 'done' ? 'text-success'
+                        : entry.status === 'error' ? 'text-error'
+                          : entry.status === 'uploading' ? 'text-primary animate-spin'
+                            : 'text-muted'" />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="truncate text-sm text-highlighted">{{ entry.file.name }}</span>
+                  <span class="shrink-0 text-xs text-muted">{{ formatBytes(entry.file.size) }}</span>
+                </div>
+                <div v-if="entry.status === 'uploading'"
+                  class="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-elevated">
+                  <div class="h-full rounded-full bg-primary transition-all"
+                    :style="`width:${Math.round(entry.progress * 100)}%`" />
+                </div>
+                <p v-if="entry.errorMsg" class="text-xs text-error">{{ entry.errorMsg }}</p>
+              </div>
+              <UButton v-if="entry.status === 'queued' || entry.status === 'error'" icon="i-lucide-x" size="xs"
+                color="neutral" variant="ghost" :aria-label="AG.attachments.remove"
+                @click="removeAttachmentEntry(entry.id)" />
+            </li>
+          </ul>
+          <p v-else-if="!existingAttachments.length" class="text-sm text-muted">{{ AG.attachments.empty }}</p>
         </UCard>
 
         <!-- Contract date changes -->
@@ -604,4 +769,7 @@ async function onSave() {
       </div>
     </template>
   </UDashboardPanel>
+
+  <!-- File viewer — must live outside UDashboardPanel -->
+  <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />
 </template>

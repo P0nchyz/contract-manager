@@ -5,7 +5,7 @@ import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
 import { formatDate, formatNumber, formatMoney } from '~/utils/format'
 import { buildPeriods } from '~/data/calc/schedule'
-import type { Estimate, ConceptId } from '~/data/models'
+import type { Estimate, ConceptId, FileAsset } from '~/data/models'
 
 definePageMeta({ requiredPermission: 'estimate:create' })
 
@@ -178,6 +178,17 @@ async function onUploadPhoto(ev: Event) {
   } finally { uploading.value = false }
 }
 function fileName(id: string | null) { return id ? (data.value?.files.find((f) => f.id === id)?.name ?? id) : '' }
+function fileAssetOf(id: string | null | undefined) {
+  return id ? (data.value?.files.find((f) => f.id === id) ?? null) : null
+}
+
+// ─── File viewer ──────────────────────────────────────────────────────────────
+const viewerOpen = ref(false)
+const viewingFile = ref<FileAsset | null>(null)
+function openViewer(file: FileAsset) {
+  viewingFile.value = file
+  viewerOpen.value = true
+}
 
 // ─── Save / submit ────────────────────────────────────────────────────────────
 const saving = ref(false)
@@ -383,11 +394,13 @@ const reviewEstimate = computed(() => currentEstimate.value)
                             <UInput v-model="r.quantity" type="number" size="xs" class="w-24" :placeholder="'0'" />
                           </td>
                           <td class="px-2 py-1.5">
-                            <div class="flex items-center gap-1.5">
-                              <UButton :icon="r.photoFileId ? 'i-lucide-image' : 'i-lucide-image-plus'"
-                                :color="r.photoFileId ? 'success' : 'neutral'" variant="soft" size="xs"
+                            <div class="flex items-center gap-2">
+                              <FileThumbnail :file="fileAssetOf(r.photoFileId)" size="sm" required
+                                @click="openViewer($event)" />
+                              <UButton :icon="r.photoFileId ? 'i-lucide-refresh-cw' : 'i-lucide-image-plus'"
+                                :color="r.photoFileId ? 'neutral' : 'warning'" variant="soft" size="xs"
                                 @click="openPhotoPicker(h, r)">
-                                {{ r.photoFileId ? fileName(r.photoFileId).slice(0, 14) : F.hojas.rowPhoto }}
+                                {{ r.photoFileId ? F.hojas.changePhoto : F.hojas.rowPhoto }}
                               </UButton>
                             </div>
                           </td>
@@ -423,7 +436,8 @@ const reviewEstimate = computed(() => currentEstimate.value)
           <template v-if="step === 3 && reviewEstimate">
             <UAlert color="primary" variant="soft" icon="i-lucide-info" :title="F.review.hint" />
             <EstimateDocument :estimate="reviewEstimate" :contract-amount="contract?.amount ?? undefined"
-              :anticipo-percentage="contract?.anticipoPercentage ?? undefined" :file-name="fileName" />
+              :anticipo-percentage="contract?.anticipoPercentage ?? undefined" :file-name="fileName"
+              :file-of="fileAssetOf" @open-file="openViewer" />
             <UAlert v-if="saveError" :title="saveError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
             <div
               class="sticky bottom-0 -mx-4 flex justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
@@ -464,4 +478,7 @@ const reviewEstimate = computed(() => currentEstimate.value)
       </div>
     </template>
   </UModal>
+
+  <!-- File viewer — must live outside UDashboardPanel -->
+  <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />
 </template>

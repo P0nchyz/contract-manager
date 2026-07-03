@@ -193,7 +193,6 @@ export interface CreateLogNoteInput {
   customBody: string
   residentCedula?: string
   superintendentCedula?: string
-  attachmentFileIds?: FileId[]
 }
 export interface LogNoteRepository {
   listByContract(contractId: ContractId, params?: ListParams): Promise<LogNote[]>

@@ -3,6 +3,7 @@
 import { ref } from 'vue'
 import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
+import type { FileAsset } from '~/data/models'
 
 definePageMeta({ requiredPermission: 'estimate:view' })
 
@@ -30,7 +31,7 @@ const { data, status, error, refresh } = await useAsyncData(
     // Re-hydrate date fields in case useAsyncData serialized them to strings
     const hydratedNote = {
       ...note,
-      date:      note.date      ? new Date(note.date)      : null,
+      date: note.date ? new Date(note.date) : null,
       createdAt: note.createdAt ? new Date(note.createdAt) : null,
     }
     return { note: hydratedNote, attachedFiles, authorName }
@@ -65,13 +66,12 @@ function formatBytes(n: number) {
   return `${(n / 1_048_576).toFixed(1)} MB`
 }
 
-function fileIcon(mime: string): string {
-  if (mime.startsWith('image/'))     return 'i-lucide-image'
-  if (mime === 'application/pdf')    return 'i-lucide-file-text'
-  if (mime.includes('spreadsheet') || mime.includes('excel')) return 'i-lucide-table'
-  if (mime.includes('word') || mime.includes('document'))     return 'i-lucide-file-text'
-  if (mime.startsWith('video/'))     return 'i-lucide-video'
-  return 'i-lucide-file'
+// ─── Viewer ───────────────────────────────────────────────────────────────────
+const viewerOpen = ref(false)
+const viewingFile = ref<FileAsset | null>(null)
+function openViewer(file: FileAsset) {
+  viewingFile.value = file
+  viewerOpen.value = true
 }
 </script>
 
@@ -80,26 +80,15 @@ function fileIcon(mime: string): string {
     <template #header>
       <UDashboardNavbar :title="data?.note.title ?? EV.title">
         <template #leading>
-          <UButton
-            icon="i-lucide-arrow-left"
-            color="neutral"
-            variant="ghost"
-            :to="`/contracts/${contractId}/evidence`"
-            :aria-label="S.common.back"
-          />
+          <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" :to="`/contracts/${contractId}/evidence`"
+            :aria-label="S.common.back" />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <UAlert
-        v-if="error"
-        color="error"
-        variant="soft"
-        icon="i-lucide-alert-triangle"
-        :title="S.common.error"
-        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
-      />
+      <UAlert v-if="error" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="S.common.error"
+        :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]" />
 
       <div v-else-if="status === 'pending'" class="space-y-4">
         <USkeleton class="h-36 w-full rounded-lg" />
@@ -137,13 +126,8 @@ function fileIcon(mime: string): string {
             <div class="flex items-center gap-2 font-medium">
               <UIcon name="i-lucide-paperclip" class="size-4 text-muted" />
               {{ EV.detail.files }}
-              <UBadge
-                v-if="data.attachedFiles.length"
-                :label="String(data.attachedFiles.length)"
-                color="neutral"
-                variant="soft"
-                size="sm"
-              />
+              <UBadge v-if="data.attachedFiles.length" :label="String(data.attachedFiles.length)" color="neutral"
+                variant="soft" size="sm" />
             </div>
           </template>
 
@@ -152,41 +136,25 @@ function fileIcon(mime: string): string {
           </p>
 
           <ul v-else class="divide-y divide-default">
-            <li
-              v-for="file in data.attachedFiles"
-              :key="file.id"
-              class="flex items-center gap-3 py-2.5"
-            >
-              <UIcon
-                :name="fileIcon(file.mimeType)"
-                class="size-4 shrink-0 text-muted"
-              />
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium text-highlighted">{{ file.name }}</p>
+            <li v-for="file in data.attachedFiles" :key="file.id" class="flex items-center gap-3 py-2.5">
+              <UIcon :name="fileIcon(file.mimeType)" class="size-4 shrink-0 text-muted" />
+              <button type="button" class="min-w-0 flex-1 text-left" @click="openViewer(file)">
+                <p class="truncate text-sm font-medium text-highlighted hover:underline">{{ file.name }}</p>
                 <p class="text-xs text-muted">{{ formatBytes(file.sizeBytes) }}</p>
-              </div>
-              <UButton
-                icon="i-lucide-download"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                :loading="downloadingId === file.id"
-                :aria-label="EV.detail.download"
-                @click="downloadFile(file.id, file.name)"
-              />
+              </button>
+              <UButton icon="i-lucide-download" size="xs" color="neutral" variant="ghost"
+                :loading="downloadingId === file.id" :aria-label="EV.detail.download"
+                @click="downloadFile(file.id, file.name)" />
             </li>
           </ul>
 
-          <UAlert
-            v-if="downloadError"
-            :title="downloadError"
-            color="error"
-            variant="soft"
-            icon="i-lucide-alert-triangle"
-            class="mt-3"
-          />
+          <UAlert v-if="downloadError" :title="downloadError" color="error" variant="soft"
+            icon="i-lucide-alert-triangle" class="mt-3" />
         </UCard>
       </div>
     </template>
   </UDashboardPanel>
+
+  <!-- File viewer — must live outside UDashboardPanel -->
+  <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />
 </template>

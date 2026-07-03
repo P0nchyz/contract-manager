@@ -289,7 +289,7 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
       { id: 'LS-2', role: 'supervisor',     userId: 'U-SVR', signedAt: d('2024-01-15'), status: 'signed' },
       { id: 'LS-3', role: 'resident',       userId: 'U-RES', signedAt: d('2024-01-15'), status: 'signed' },
     ],
-    attachmentFileIds: [], locked: true, createdAt: d('2024-01-15'),
+    locked: true, createdAt: d('2024-01-15'),
   },
   {
     id: 'LN-002', contractId: 'CT-001', folio: 2, category: 'inicio_trabajos' as LogNoteCategory,
@@ -303,7 +303,7 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
       { id: 'LS-5', role: 'supervisor',     userId: 'U-SVR', signedAt: d('2024-02-06'), status: 'signed' },
       { id: 'LS-6', role: 'resident',       userId: 'U-RES', signedAt: d('2024-02-06'), status: 'signed' },
     ],
-    attachmentFileIds: ['FILE-10'], locked: true, createdAt: d('2024-02-05'),
+    locked: true, createdAt: d('2024-02-05'),
   },
   {
     id: 'LN-003', contractId: 'CT-001', folio: 3, category: 'estimaciones' as LogNoteCategory,
@@ -317,7 +317,7 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
       { id: 'LS-8', role: 'supervisor',     userId: null,    signedAt: null,             status: 'pending' },
       { id: 'LS-9', role: 'resident',       userId: null,    signedAt: null,             status: 'pending' },
     ],
-    attachmentFileIds: [], locked: false, createdAt: d('2024-03-20'),
+    locked: false, createdAt: d('2024-03-20'),
   },
 ]
 
@@ -331,7 +331,7 @@ export const agreements: ModificationAgreement[] = [
     { id: 'AE-1', action: 'created', byUserId: 'U-RES', at: d('2024-03-14') },
     { id: 'AE-2', action: 'submitted', byUserId: 'U-RES', at: d('2024-03-14') },
     { id: 'AE-3', action: 'approved', byUserId: 'U-SVR', at: d('2024-03-16') },
-  ], attachmentFileIds: [], createdById: 'U-RES', createdAt: d('2024-03-14'), updatedAt: d('2024-03-16') },
+  ], attachmentFileIds: ['FILE-01'], createdById: 'U-RES', createdAt: d('2024-03-14'), updatedAt: d('2024-03-16') },
 ]
 
 // --- Reception / finiquito (separate flows; none started yet) --------------

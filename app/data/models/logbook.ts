@@ -1,6 +1,5 @@
 // app/data/models/logbook.ts
 import type { ContractId, LogNoteId, UserId } from './common'
-import type { FileId } from './files'
 import type { Signature } from './workflow'
 
 export type LogNoteCategory =
@@ -38,7 +37,6 @@ export interface LogNote {
   isOpeningNote: boolean
   authorId: UserId
   signatures: Signature[]
-  attachmentFileIds: FileId[]
   locked: boolean       // true once all three roles have signed
   createdAt: Date       // auto-set at creation; also serves as the note date
 }

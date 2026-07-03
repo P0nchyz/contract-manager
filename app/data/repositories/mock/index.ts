@@ -918,7 +918,6 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
           isOpeningNote,
           authorId: currentUserId,
           signatures: pendingSignatures(),
-          attachmentFileIds: input.attachmentFileIds ?? [],
           locked: false,
           createdAt: new Date(),
         }
