@@ -281,6 +281,11 @@ export function createMockRepositories(): Repositories {
     slot.status = 'signed'
     return signatures
   }
+  // Sign the creator's own slot automatically on creation/send — silently
+  // skipped for roles that don't have a signing slot (e.g. entity).
+  const trySignAsCreator = (signatures: Signature[]): void => {
+    if (SIGNING_ROLES.includes(currentUser().role as SigningRole)) applySignature(signatures)
+  }
 
   // --- estimate derivation helpers (closures; no `this` binding) ----------
   function upToLastByConcept(
@@ -857,14 +862,11 @@ export function createMockRepositories(): Repositories {
         if (isOpeningNote && contractNotes.some((n) => n.isOpeningNote)) {
           throw new RepositoryError(409, 'La nota de apertura ya existe para este contrato', 'already_exists')
         }
-        // No other notes until opening note is signed by all three
+        // No other notes until the opening note exists
         if (!isOpeningNote) {
           const opening = contractNotes.find((n) => n.isOpeningNote)
           if (!opening) {
-            throw new RepositoryError(409, 'Debes crear y firmar la nota de apertura antes de agregar otras notas', 'opening_required')
-          }
-          if (!opening.locked) {
-            throw new RepositoryError(409, 'La nota de apertura debe ser firmada por los tres roles antes de agregar otras notas', 'opening_unsigned')
+            throw new RepositoryError(409, 'Debes crear la nota de apertura antes de agregar otras notas', 'opening_required')
           }
         }
 
@@ -921,6 +923,8 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
           locked: false,
           createdAt: new Date(),
         }
+        trySignAsCreator(note.signatures)
+        if (note.signatures.every((s) => s.status === 'signed')) note.locked = true
         db.logNotes.push(note)
         save()
         return clone(note)

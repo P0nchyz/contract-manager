@@ -31,7 +31,6 @@ const canCreate = computed(() => can('logNote:create'))
 
 // ─── Opening note state ───────────────────────────────────────────────────────
 const openingNote = computed(() => data.value?.notes.find((n) => n.isOpeningNote) ?? null)
-const openingLocked = computed(() => openingNote.value?.locked ?? false)
 const hasOpening = computed(() => !!openingNote.value)
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
@@ -111,7 +110,7 @@ function fmt(d: Date | string) {
     <template #header>
       <UDashboardNavbar :title="L.title">
         <template #right>
-          <UButton v-if="canCreate && hasOpening && openingLocked" icon="i-lucide-plus" size="sm"
+          <UButton v-if="canCreate && hasOpening" icon="i-lucide-plus" size="sm"
             :to="`/contracts/${contractId}/logbook/new`">
             Nueva nota
           </UButton>
@@ -132,10 +131,6 @@ function fmt(d: Date | string) {
       </div>
 
       <template v-else-if="data">
-        <!-- Opening note unsigned warning -->
-        <UAlert v-if="hasOpening && !openingLocked" color="warning" variant="soft" icon="i-lucide-lock-open"
-          :title="L.openingUnsigned" class="mb-4" />
-
         <!-- ─── Filters ───────────────────────────────────────────────── -->
         <UCard class="mb-4" :ui="{ body: 'py-3' }">
           <div class="flex flex-wrap gap-3">

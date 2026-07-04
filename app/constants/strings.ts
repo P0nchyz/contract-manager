@@ -449,7 +449,7 @@ export const S = {
     logNoteStep: {
       title: 'Nota de bitácora de cierre',
       hint: 'Esta nota quedará vinculada automáticamente al acta de recepción.',
-      titleLabel: 'Título',
+      titleLabel: 'Asunto',
       titlePlaceholder: 'Ej. Acta de entrega-recepción de obra',
       bodyLabel: 'Descripción',
       bodyPlaceholder: 'Describe el estado de la obra al momento de la recepción…',
@@ -667,8 +667,7 @@ export const S = {
     actions: { sign: 'Firmar nota' },
     lockedNotice: 'Esta nota quedará inmutable una vez que los tres roles la firmen.',
     signedNotice: 'Nota firmada por los tres roles. Inmutable.',
-    openingRequired: 'Debes crear y firmar la nota de apertura antes de registrar otras notas.',
-    openingUnsigned: 'La nota de apertura debe ser firmada por los tres roles antes de agregar otras notas.',
+    openingRequired: 'Debes crear la nota de apertura antes de registrar otras notas.',
     newTitle: 'Nueva nota de bitácora',
     newOpeningTitle: 'Nota de apertura de bitácora',
     openingHint: 'Esta es la primera nota de la bitácora. El texto oficial se genera automáticamente con los datos del contrato.',
@@ -692,7 +691,7 @@ export const S = {
     },
     fields: {
       category: 'Categoría',
-      title: 'Título',
+      title: 'Asunto',
       titlePlaceholder: 'Ej. Inicio de trazo y nivelación',
       customBody: 'Observaciones adicionales',
       customBodyPlaceholder: 'Agrega observaciones, instrucciones o cualquier información relevante…',
@@ -702,7 +701,7 @@ export const S = {
     },
     validation: {
       categoryRequired: 'Selecciona una categoría.',
-      titleRequired: 'El título es requerido.',
+      titleRequired: 'El asunto es requerido.',
     },
     search: {
       placeholder: 'Buscar en bitácora…',
