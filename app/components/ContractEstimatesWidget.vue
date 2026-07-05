@@ -6,7 +6,7 @@ import { S } from '~/constants/strings'
 const props = defineProps<{ estimates: Estimate[]; contractId: string }>()
 
 // Legend reflects the agreed status colors.
-const legend = (['draft', 'submitted', 'with_notes', 'rejected', 'approved', 'paid'] as EstimateStatus[])
+const legend = (['draft', 'submitted', 'rejected', 'approved', 'paid'] as EstimateStatus[])
   .map((s) => estimateStatusDisplay[s])
 </script>
 

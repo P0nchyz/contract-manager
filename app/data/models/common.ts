@@ -58,8 +58,7 @@ export type SigningRole = (typeof SIGNING_ROLES)[number]
 export type EstimateStatus =
   | 'draft' // dotted border, visible to resident only
   | 'submitted' // empty
-  | 'with_notes' // black — returned by supervisor for revision (loops to draft)
-  | 'rejected' // red — rejected by resident (loops to draft)
+  | 'rejected' // red — rejected with notes by resident or supervisor (loops to draft)
   | 'approved' // green
   | 'paid' // blue
 

@@ -10,8 +10,7 @@ export type Permission =
   | 'contract:assign'          // entity: change resident/super/supervisor on a contract
   | 'estimate:create'          // superintendent creates estimates
   | 'estimate:view'
-  | 'estimate:returnWithNotes' // supervisor only
-  | 'estimate:reject'          // resident only
+  | 'estimate:rejectWithNotes' // resident + supervisor, until they've signed
   | 'estimate:pay'             // financial only
   | 'logNote:create'
   | 'agreement:create'         // resident + superintendent
@@ -38,7 +37,7 @@ const MATRIX: Record<Role, readonly Permission[]> = {
 
   resident: [
     'contract:manage',
-    'estimate:view', 'estimate:reject',
+    'estimate:view', 'estimate:rejectWithNotes',
     'logNote:create', 'agreement:create',
     'evidence:upload', 'evidence:create', 'file:upload',
     'sign', 'financial:view',
@@ -52,7 +51,7 @@ const MATRIX: Record<Role, readonly Permission[]> = {
   ],
 
   supervisor: [
-    'estimate:view', 'estimate:returnWithNotes',
+    'estimate:view', 'estimate:rejectWithNotes',
     'logNote:create',
     'file:upload', 'sign', 'financial:view',
   ],

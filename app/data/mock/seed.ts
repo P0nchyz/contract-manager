@@ -156,6 +156,7 @@ export const estimates: Estimate[] = [
         total: 28_009_000,
       },
     },
+    evidenceFileIds: ['FILE-10'] as FileAsset['id'][],
     sectionNotes: {},
     signatures: [
       { id: 'SG-1', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-02-02'), status: 'signed' },
@@ -177,7 +178,7 @@ export const estimates: Estimate[] = [
     contractId: 'CT-001',
     number: 2,
     periodIndex: 2,
-    status: 'with_notes',
+    status: 'rejected',
     periodStart: d('2024-02-01'),
     periodEnd: d('2024-02-29'),
     cover: {
@@ -236,9 +237,11 @@ export const estimates: Estimate[] = [
         total: 200_605_000,
       },
     },
+    evidenceFileIds: ['FILE-10'] as FileAsset['id'][],
     sectionNotes: {
       services: 'Verificar que las cantidades de levantamiento coincidan con el plano topográfico anexo.',
       'hoja:CN-02': 'Falta soporte fotográfico del segundo tramo de modelado. Adjuntar evidencia por renglón.',
+      evidence: 'Faltan fotografías generales del avance de este periodo.',
     },
     signatures: [
       { id: 'SG-4', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-03-02'), status: 'signed' },
@@ -248,7 +251,7 @@ export const estimates: Estimate[] = [
     history: [
       { id: 'EV-5', action: 'created', byUserId: 'U-SUP', at: d('2024-03-01') },
       { id: 'EV-6', action: 'submitted', byUserId: 'U-SUP', at: d('2024-03-02') },
-      { id: 'EV-7', action: 'returned_with_notes', byUserId: 'U-SVR', at: d('2024-03-05') },
+      { id: 'EV-7', action: 'rejected', byUserId: 'U-SVR', at: d('2024-03-05') },
     ],
     createdById: 'U-SUP',
     createdAt: d('2024-03-01'),

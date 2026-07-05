@@ -44,7 +44,6 @@ export interface StatusDisplay {
 export const estimateStatusDisplay: Record<EstimateStatus, StatusDisplay> = {
   draft: { label: S.estimateStatus.draft, color: 'neutral', variant: 'outline', dashed: true },
   submitted: { label: S.estimateStatus.submitted, color: 'neutral', variant: 'soft' },
-  with_notes: { label: S.estimateStatus.with_notes, color: 'neutral', variant: 'solid' },
   rejected: { label: S.estimateStatus.rejected, color: 'error', variant: 'solid' },
   approved: { label: S.estimateStatus.approved, color: 'success', variant: 'solid' },
   paid: { label: S.estimateStatus.paid, color: 'info', variant: 'solid' },

@@ -348,6 +348,21 @@ const saldoAmortizar = computed(() => anticipoAmt.value - accumAmort.value)
         </template>
       </div>
     </section>
+
+    <!-- ═══════════════ IMAGE EVIDENCE (whole estimate) ═══════════════ -->
+    <section v-if="(e.evidenceFileIds ?? []).length" class="doc-page">
+      <header class="mb-4 border-b-2 border-default pb-3">
+        <h2 class="text-base font-bold text-highlighted">{{ D.evidenceTitle }}</h2>
+        <p class="mt-1 text-xs text-muted">{{ D.evidenceHint }}</p>
+      </header>
+
+      <slot name="note-evidence" />
+
+      <div class="flex flex-wrap gap-3">
+        <FileThumbnail v-for="fid in (e.evidenceFileIds ?? [])" :key="fid"
+          :file="fileOf ? (fileOf(fid) ?? null) : null" size="lg" @click="emit('open-file', $event)" />
+      </div>
+    </section>
   </div>
 </template>
 

@@ -171,6 +171,9 @@ function loadDb<T extends object>(fallback: T): T {
           }
         }
         if (!Array.isArray(e.lineItems)) e.lineItems = []
+        if (!Array.isArray(e.evidenceFileIds)) e.evidenceFileIds = []
+        // with_notes was merged into rejected (both now carry per-section notes)
+        if (e.status === 'with_notes') e.status = 'rejected'
       }
     }
     return parsed as T
@@ -660,6 +663,7 @@ export function createMockRepositories(): Repositories {
             anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, retentions: 0,
             cincoAlMillarSfp: 0, total: 0,
           } },
+          evidenceFileIds: [],
           sectionNotes: {},
           signatures: pendingSignatures(),
           history: [event('created')],
@@ -700,8 +704,17 @@ export function createMockRepositories(): Repositories {
           if (!concept.sectionId) {
             throw new RepositoryError(409, `El concepto ${concept.specificationNumber} no tiene partida asignada`, 'concept_without_section')
           }
-          if (plannedFor(hi.conceptId) <= 0) {
+          const planned = plannedFor(hi.conceptId)
+          if (planned <= 0) {
             throw new RepositoryError(409, `El concepto ${concept.specificationNumber} no está programado para este período`, 'concept_not_scheduled')
+          }
+          const rowsTotal = hi.rows.reduce((s, r) => s + (Number.isFinite(r.quantity) ? r.quantity : 0), 0)
+          if (rowsTotal > planned) {
+            throw new RepositoryError(
+              409,
+              `El concepto ${concept.specificationNumber} supera el volumen programado para este período (${planned})`,
+              'exceeds_scheduled_quantity',
+            )
           }
           return {
             id: hi.id ?? genId('HG'),
@@ -731,6 +744,7 @@ export function createMockRepositories(): Repositories {
           seen.add(String(h.conceptId))
         }
         e.hojas = hojas
+        if (input.evidenceFileIds !== undefined) e.evidenceFileIds = [...input.evidenceFileIds]
         recomputeEstimate(e)
         e.updatedAt = new Date()
         save()
@@ -777,20 +791,32 @@ export function createMockRepositories(): Repositories {
       async approve(id) {
         return transition(db.estimates, id, 'Estimación', 'approved', 'approved')
       },
-      async returnWithNotes(id, notes) {
+      async rejectWithNotes(id, notes) {
         await delay()
         const e = db.estimates.find((x) => x.id === id)
         if (!e) throw notFound('Estimación')
-        if (e.status !== 'submitted') throw new RepositoryError(409, 'Solo se devuelve una estimación enviada', 'wrong_status')
-        e.status = 'with_notes'
-        e.sectionNotes = notes ?? {}
-        e.history.push(event('returned_with_notes'))
+        if (e.status !== 'submitted') {
+          throw new RepositoryError(409, 'Solo se rechaza una estimación enviada', 'wrong_status')
+        }
+        const role = currentUser().role
+        if (role !== 'resident' && role !== 'supervisor') {
+          throw new RepositoryError(403, 'Solo el residente o el supervisor pueden rechazar con notas', 'forbidden')
+        }
+        const mySlot = e.signatures.find((s) => s.role === role)
+        if (mySlot?.status === 'signed') {
+          throw new RepositoryError(409, 'Ya firmaste esta estimación; no puedes rechazarla', 'already_signed')
+        }
+        const cleaned: Record<string, string> = {}
+        for (const [k, v] of Object.entries(notes ?? {})) if (v.trim()) cleaned[k] = v.trim()
+        if (Object.keys(cleaned).length === 0) {
+          throw new RepositoryError(409, 'Agrega al menos una nota para rechazar la estimación', 'notes_required')
+        }
+        e.status = 'rejected'
+        e.sectionNotes = cleaned
+        e.history.push(event('rejected'))
         e.updatedAt = new Date()
         save()
         return clone(e)
-      },
-      async reject(id, note) {
-        return transition(db.estimates, id, 'Estimación', 'rejected', 'rejected', note)
       },
       async markPaid(id, paymentEvidenceFileId) {
         await delay()

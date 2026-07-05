@@ -54,13 +54,16 @@ const mySlot = computed(() => estimate.value?.signatures.find((s) => s.role === 
 const canSign = computed(() =>
   st.value === 'submitted' && can('sign') && !!mySlot.value && mySlot.value.status === 'pending',
 )
-const canReturn = computed(() => st.value === 'submitted' && can('estimate:returnWithNotes'))
-const canReject = computed(() => st.value === 'submitted' && can('estimate:reject'))
-const canPay = computed(() => st.value === 'approved' && can('estimate:pay'))
-const canCreateNew = computed(() =>
-  (st.value === 'with_notes' || st.value === 'rejected') && can('estimate:create'),
+// Resident or supervisor can reject with notes — but only before THEY sign.
+// Once you've signed, you've committed to approval; you can no longer reject.
+const canRejectWithNotes = computed(() =>
+  st.value === 'submitted' && can('estimate:rejectWithNotes') &&
+  (role.value === 'resident' || role.value === 'supervisor') &&
+  mySlot.value?.status !== 'signed',
 )
-const hasBarAction = computed(() => canSign.value || canReturn.value || canReject.value || canPay.value || canCreateNew.value)
+const canPay = computed(() => st.value === 'approved' && can('estimate:pay'))
+const canCreateNew = computed(() => st.value === 'rejected' && can('estimate:create'))
+const hasBarAction = computed(() => canSign.value || canRejectWithNotes.value || canPay.value || canCreateNew.value)
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 const busy = ref(false)
@@ -74,27 +77,24 @@ async function run(fn: () => Promise<unknown>) {
 const sign = () => run(() => repos.estimates.sign(estimateId.value))
 const markPaid = () => run(() => repos.estimates.markPaid(estimateId.value))
 
-// Reject (single reason)
+// Reject with per-section notes (resident or supervisor) — at least one note required
 const showReject = ref(false)
-const rejectNote = ref('')
-const reject = () => run(async () => {
-  await repos.estimates.reject(estimateId.value, rejectNote.value.trim())
-  showReject.value = false; rejectNote.value = ''
-})
-
-// Return with per-section notes
-const showReturn = ref(false)
-const returnNotes = ref<Record<string, string>>({})
-function openReturn() {
-  returnNotes.value = { cover: '', services: '', summary: '' }
-  for (const h of estimate.value?.hojas ?? []) returnNotes.value[`hoja:${h.conceptId}`] = ''
-  showReturn.value = true
+const rejectNotes = ref<Record<string, string>>({})
+const rejectError = ref<string | null>(null)
+function openReject() {
+  rejectNotes.value = { cover: '', services: '', summary: '' }
+  for (const h of estimate.value?.hojas ?? []) rejectNotes.value[`hoja:${h.conceptId}`] = ''
+  rejectNotes.value.evidence = ''
+  rejectError.value = null
+  showReject.value = true
 }
-const submitReturn = () => run(async () => {
+const hasAnyRejectNote = computed(() => Object.values(rejectNotes.value).some((v) => v.trim()))
+const submitReject = () => run(async () => {
+  if (!hasAnyRejectNote.value) { rejectError.value = ED.note.atLeastOneRequired; return }
   const cleaned: Record<string, string> = {}
-  for (const [k, v] of Object.entries(returnNotes.value)) if (v.trim()) cleaned[k] = v.trim()
-  await repos.estimates.returnWithNotes(estimateId.value, cleaned)
-  showReturn.value = false
+  for (const [k, v] of Object.entries(rejectNotes.value)) if (v.trim()) cleaned[k] = v.trim()
+  await repos.estimates.rejectWithNotes(estimateId.value, cleaned)
+  showReject.value = false
 })
 
 const userName = (id: UserId | null | undefined) =>
@@ -138,10 +138,10 @@ function openViewer(file: FileAsset) {
         </div>
 
         <div v-else-if="estimate" class="space-y-6 pb-6">
-          <!-- Returned/rejected banner -->
-          <UAlert v-if="st === 'with_notes' || st === 'rejected'" :color="st === 'rejected' ? 'error' : 'warning'"
+          <!-- Rejected banner -->
+          <UAlert v-if="st === 'rejected'" color="error"
             variant="soft" icon="i-lucide-alert-triangle"
-            :title="st === 'rejected' ? ED.banner.rejected : ED.banner.withNotes"
+            :title="ED.banner.rejected"
             :description="ED.banner.notEditable" />
 
           <!-- The document -->
@@ -165,6 +165,10 @@ function openViewer(file: FileAsset) {
               <UAlert v-if="sectionNotes[`hoja:${hoja.conceptId}`]" class="mb-3" color="warning" variant="soft"
                 icon="i-lucide-message-square-warning" :title="`${ED.note.hoja} ${hoja.number}`"
                 :description="sectionNotes[`hoja:${hoja.conceptId}`]" />
+            </template>
+            <template #note-evidence>
+              <UAlert v-if="sectionNotes.evidence" class="mb-3" color="warning" variant="soft"
+                icon="i-lucide-message-square-warning" :title="ED.note.evidence" :description="sectionNotes.evidence" />
             </template>
           </EstimateDocument>
 
@@ -219,13 +223,9 @@ function openViewer(file: FileAsset) {
           <!-- Action bar -->
           <div v-if="hasBarAction"
             class="sticky bottom-0 -mx-4 flex flex-wrap justify-end gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
-            <UButton v-if="canReject" color="error" variant="soft" icon="i-lucide-x" :loading="busy"
-              @click="() => void (showReject = true)">
-              {{ ED.actions.reject }}
-            </UButton>
-            <UButton v-if="canReturn" color="warning" variant="soft" icon="i-lucide-corner-up-left" :loading="busy"
-              @click="openReturn">
-              {{ ED.actions.returnWithNotes }}
+            <UButton v-if="canRejectWithNotes" color="error" variant="soft" icon="i-lucide-x" :loading="busy"
+              @click="openReject">
+              {{ ED.actions.rejectWithNotes }}
             </UButton>
             <UButton v-if="canSign" color="success" icon="i-lucide-pen-line" :loading="busy" @click="sign">
               {{ ED.actions.sign }}
@@ -244,49 +244,53 @@ function openViewer(file: FileAsset) {
 
   </UDashboardPanel>
 
-  <!-- Reject modal — must live outside UDashboardPanel -->
-  <UModal v-model:open="showReject" :title="ED.note.rejectTitle">
+  <!-- Reject-with-notes modal — must live outside UDashboardPanel -->
+  <UModal v-model:open="showReject" :title="ED.note.modalTitle" :ui="{ content: 'sm:max-w-2xl' }">
     <template #body>
-      <UFormField :label="ED.note.label">
-        <UTextarea v-model="rejectNote" :rows="4" class="w-full" :placeholder="ED.note.placeholder" />
-      </UFormField>
+      <div class="space-y-3">
+        <p class="text-xs text-muted">{{ ED.note.perSectionHint }}</p>
+
+        <div class="rounded-lg border border-default p-3">
+          <p class="mb-2 flex items-center gap-1.5 text-sm font-medium text-highlighted">
+            <UIcon name="i-lucide-file-text" class="size-4 text-muted" />{{ ED.note.cover }}
+          </p>
+          <UTextarea v-model="rejectNotes.cover" :rows="2" class="w-full" :placeholder="ED.note.placeholder" />
+        </div>
+        <div class="rounded-lg border border-default p-3">
+          <p class="mb-2 flex items-center gap-1.5 text-sm font-medium text-highlighted">
+            <UIcon name="i-lucide-list-checks" class="size-4 text-muted" />{{ ED.note.services }}
+          </p>
+          <UTextarea v-model="rejectNotes.services" :rows="2" class="w-full" :placeholder="ED.note.placeholder" />
+        </div>
+        <div class="rounded-lg border border-default p-3">
+          <p class="mb-2 flex items-center gap-1.5 text-sm font-medium text-highlighted">
+            <UIcon name="i-lucide-table" class="size-4 text-muted" />{{ ED.note.summary }}
+          </p>
+          <UTextarea v-model="rejectNotes.summary" :rows="2" class="w-full" :placeholder="ED.note.placeholder" />
+        </div>
+        <div v-for="h in (estimate?.hojas ?? [])" :key="h.id" class="rounded-lg border border-default p-3">
+          <p class="mb-2 flex items-center gap-1.5 text-sm font-medium text-highlighted">
+            <UIcon name="i-lucide-file-spreadsheet" class="size-4 text-muted" />
+            {{ ED.note.hoja }} {{ h.number }} — {{ h.specificationNumber }}
+          </p>
+          <UTextarea v-model="rejectNotes[`hoja:${h.conceptId}`]" :rows="2" class="w-full"
+            :placeholder="ED.note.placeholder" />
+        </div>
+        <div class="rounded-lg border border-default p-3">
+          <p class="mb-2 flex items-center gap-1.5 text-sm font-medium text-highlighted">
+            <UIcon name="i-lucide-image" class="size-4 text-muted" />{{ ED.note.evidence }}
+          </p>
+          <UTextarea v-model="rejectNotes.evidence" :rows="2" class="w-full" :placeholder="ED.note.placeholder" />
+        </div>
+
+        <UAlert v-if="rejectError" :title="rejectError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
+      </div>
     </template>
     <template #footer>
       <div class="flex w-full justify-end gap-3">
         <UButton color="neutral" variant="ghost" @click="() => void (showReject = false)">{{ S.common.cancel }}
         </UButton>
-        <UButton color="error" :disabled="!rejectNote.trim()" :loading="busy" @click="reject">{{ ED.actions.reject }}
-        </UButton>
-      </div>
-    </template>
-  </UModal>
-
-  <!-- Return with per-section notes modal — must live outside UDashboardPanel -->
-  <UModal v-model:open="showReturn" :title="ED.note.returnTitle">
-    <template #body>
-      <div class="space-y-4">
-        <p class="text-xs text-muted">{{ ED.note.perSectionHint }}</p>
-        <UFormField :label="ED.note.cover">
-          <UTextarea v-model="returnNotes.cover" :rows="2" class="w-full" :placeholder="ED.note.placeholder" />
-        </UFormField>
-        <UFormField :label="ED.note.services">
-          <UTextarea v-model="returnNotes.services" :rows="2" class="w-full" :placeholder="ED.note.placeholder" />
-        </UFormField>
-        <UFormField :label="ED.note.summary">
-          <UTextarea v-model="returnNotes.summary" :rows="2" class="w-full" :placeholder="ED.note.placeholder" />
-        </UFormField>
-        <UFormField v-for="h in (estimate?.hojas ?? [])" :key="h.id"
-          :label="`${ED.note.hoja} ${h.number} — ${h.specificationNumber}`">
-          <UTextarea v-model="returnNotes[`hoja:${h.conceptId}`]" :rows="2" class="w-full"
-            :placeholder="ED.note.placeholder" />
-        </UFormField>
-      </div>
-    </template>
-    <template #footer>
-      <div class="flex w-full justify-end gap-3">
-        <UButton color="neutral" variant="ghost" @click="() => void (showReturn = false)">{{ S.common.cancel }}
-        </UButton>
-        <UButton color="warning" :loading="busy" @click="submitReturn">{{ ED.actions.returnWithNotes }}</UButton>
+        <UButton color="error" :loading="busy" @click="submitReject">{{ ED.actions.rejectWithNotes }}</UButton>
       </div>
     </template>
   </UModal>

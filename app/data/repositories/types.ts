@@ -163,13 +163,14 @@ export interface CreateEstimateInput {
   periodIndex: number
 }
 
-/** Update a draft estimate's Hojas. */
+/** Update a draft estimate's Hojas and/or its whole-estimate photo evidence. */
 export interface UpdateEstimateDraftInput {
   hojas: HojaInput[]
+  evidenceFileIds?: FileId[]
 }
 
-/** Section notes keyed by 'cover' | 'services' | 'summary' | `hoja:${conceptId}`. */
-export type ReturnWithNotesInput = Record<string, string>
+/** Section notes keyed by 'cover' | 'services' | 'summary' | 'evidence' | `hoja:${conceptId}`. At least one must be non-empty. */
+export type EstimateRejectNotesInput = Record<string, string>
 
 export interface EstimateRepository {
   listByContract(contractId: ContractId, params?: ListParams): Promise<Estimate[]>
@@ -179,8 +180,8 @@ export interface EstimateRepository {
   delete(id: EstimateId): Promise<void> // delete a draft
   submit(id: EstimateId): Promise<Estimate>
   approve(id: EstimateId): Promise<Estimate>
-  returnWithNotes(id: EstimateId, notes: ReturnWithNotesInput): Promise<Estimate> // supervisor
-  reject(id: EstimateId, note: string): Promise<Estimate> // resident
+  /** Reject with at least one per-section note. Resident or supervisor — only before either has signed. */
+  rejectWithNotes(id: EstimateId, notes: EstimateRejectNotesInput): Promise<Estimate>
   markPaid(id: EstimateId, paymentEvidenceFileId?: FileId): Promise<Estimate> // financial
   sign(id: EstimateId): Promise<Estimate>
 }

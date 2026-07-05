@@ -116,18 +116,18 @@ export interface EstimateSummary {
 }
 
 /**
- * Section notes added by the supervisor when returning an estimate. Keyed by
- * section: 'cover' | 'services' | 'summary' | `hoja:${conceptId}`.
+ * Section notes added when rejecting an estimate with notes. Keyed by
+ * section: 'cover' | 'services' | 'summary' | 'evidence' | `hoja:${conceptId}`.
  * Informational only; visible to everyone in the viewer.
  */
 export type EstimateSectionNotes = Record<string, string>
 
 /**
  * A construction estimate (estimación). Only Superintendents create these.
- * Lifecycle: draft -> submitted -> (with_notes | rejected) | approved -> paid.
- * A returned estimate (with_notes/rejected) is NOT editable — a new estimate
- * must be created for the period. Only APPROVED estimates count toward the
- * one-per-period rule.
+ * Lifecycle: draft -> submitted -> rejected | approved -> paid.
+ * A rejected estimate carries per-section notes and is NOT editable — a new
+ * estimate must be created for the period. Only APPROVED estimates count
+ * toward the one-per-period rule.
  */
 export interface Estimate {
   id: EstimateId
@@ -142,6 +142,9 @@ export interface Estimate {
   hojas: HojaGeneradora[]         // the source of truth for quantities
   lineItems: EstimateLineItem[]   // derived from hojas (recomputed on save)
   summary: EstimateSummary        // derived from hojas (recomputed on save)
+
+  /** Photo evidence for the estimate as a whole (not tied to a specific hoja/row). */
+  evidenceFileIds: FileId[]
 
   sectionNotes: EstimateSectionNotes
 
