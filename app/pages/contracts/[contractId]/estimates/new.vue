@@ -38,12 +38,21 @@ const { data, status, error, refresh } = await useAsyncData(
       editId.value ? repos.estimates.getById(editId.value).catch(() => null) : Promise.resolve(null),
     ])
     const periods = buildPeriods(new Date(contract.startDate), new Date(contract.endDate), contract.estimatePeriodicity ?? 'monthly')
-    // Periods already claimed by an APPROVED/paid estimate
-    const claimedPeriods = new Set(
-      estimates.filter((e) => e.status === 'approved' || e.status === 'paid').map((e) => e.periodIndex),
-    )
+    // A period "needs a new estimate" if it has none at all yet, or every
+    // estimate it has is rejected (needs a redo). Periods with a draft,
+    // submitted, approved, or paid estimate don't need a new one created.
+    // You can only ever create fresh for the OLDEST period that needs one —
+    // this also naturally covers "redo a rejected period" without a special case.
+    function periodNeedsNewEstimate(p: number): boolean {
+      const forP = estimates.filter((e) => e.periodIndex === p)
+      return forP.length === 0 || forP.every((e) => e.status === 'rejected')
+    }
+    let oldestOpenPeriod: number | null = null
+    for (let p = 1; p <= periods.length; p++) {
+      if (periodNeedsNewEstimate(p)) { oldestOpenPeriod = p; break }
+    }
     const scheduleEntries = schedule?.entries ?? []
-    return { contract, concepts, sections, scheduleEntries, periods, claimedPeriods, folders, files, notes, editing }
+    return { contract, concepts, sections, scheduleEntries, periods, oldestOpenPeriod, folders, files, notes, editing }
   },
 )
 
@@ -65,7 +74,7 @@ const periodOptions = computed(() => {
   return data.value.periods.map((p, i) => ({
     label: `Período ${i + 1} — ${formatDate(p.start)} a ${formatDate(p.end)}`,
     value: i + 1,
-    disabled: data.value!.claimedPeriods.has(i + 1),
+    disabled: (i + 1) !== data.value!.oldestOpenPeriod && (i + 1) !== presetPeriod.value,
   }))
 })
 const selectedPeriodDates = computed(() => {
@@ -155,6 +164,39 @@ function isOverScheduled(h: WHoja): boolean {
   return planned > 0 && hojaTotal(h) > planned
 }
 const anyOverScheduled = computed(() => hojas.value.some((h) => isOverScheduled(h)))
+
+// ─── Submission requirements ──────────────────────────────────────────────────
+// Rows registering 0 for the period are exempt from photo/log-note evidence —
+// there's nothing to document. Rows with quantity > 0 need both.
+function rowHasQuantity(r: WRow): boolean { return (parseFloat(r.quantity) || 0) > 0 }
+const hojasMissingPhoto = computed(() =>
+  hojas.value.filter((h) => h.rows.some((r) => rowHasQuantity(r) && !r.photoFileId)),
+)
+const hojasMissingLogNote = computed(() =>
+  hojas.value.filter((h) => h.rows.some((r) => rowHasQuantity(r) && !r.logNoteIds.length)),
+)
+// Every concept scheduled (planned qty > 0) for this period must have its own
+// Hoja before submitting, even if it ends up registering 0.
+const missingScheduledConcepts = computed(() => availableConcepts.value)
+
+const canSubmitEstimate = computed(() =>
+  hojas.value.length > 0 &&
+  !anyOverScheduled.value &&
+  hojasMissingPhoto.value.length === 0 &&
+  hojasMissingLogNote.value.length === 0 &&
+  missingScheduledConcepts.value.length === 0,
+)
+
+/** Add a Hoja (quantity 0, no evidence required) for every scheduled concept not yet added. */
+function addAllRemainingConcepts() {
+  for (const c of availableConcepts.value) {
+    hojas.value.push({
+      id: `tmp-${Date.now()}-${c.id}`,
+      conceptId: String(c.id),
+      rows: [{ id: `r-${Date.now()}-${c.id}`, quantity: '0', photoFileId: null, fileIds: [], logNoteIds: [] }],
+    })
+  }
+}
 
 // ─── Photo picker ─────────────────────────────────────────────────────────────
 const photoModalOpen = ref(false)
@@ -331,6 +373,9 @@ async function goToReview() {
 
 async function submit() {
   if (anyOverScheduled.value) { saveError.value = F.validation.exceedsSchedule; return }
+  if (hojasMissingPhoto.value.length) { saveError.value = F.validation.photoRequired; return }
+  if (hojasMissingLogNote.value.length) { saveError.value = F.validation.logNoteRequired; return }
+  if (missingScheduledConcepts.value.length) { saveError.value = F.validation.missingScheduledConcepts; return }
   saving.value = true; saveError.value = null
   try {
     const e = await ensureDraft()
@@ -405,6 +450,7 @@ const reviewEstimate = computed(() => currentEstimate.value)
                   formatDate(selectedPeriodDates.end) }}
               </p>
               <p class="text-xs text-muted">{{ F.period.helper }}</p>
+              <p class="text-xs text-muted">{{ F.period.sequentialHint }}</p>
               <UAlert v-if="saveError" :title="saveError" color="error" variant="soft" icon="i-lucide-alert-triangle" />
             </div>
             <template #footer>
@@ -439,7 +485,15 @@ const reviewEstimate = computed(() => currentEstimate.value)
                     :disabled="!availableConcepts.length" class="w-full" />
                 </UFormField>
                 <UButton icon="i-lucide-plus" :disabled="!pickConceptId" @click="addHoja">{{ F.hojas.add }}</UButton>
+                <UButton v-if="availableConcepts.length > 1" icon="i-lucide-list-plus" color="neutral" variant="outline"
+                  @click="addAllRemainingConcepts">
+                  {{ F.hojas.addAllRemaining }}
+                </UButton>
               </div>
+
+              <p v-if="missingScheduledConcepts.length && hojas.length" class="mb-4 text-xs text-warning">
+                {{ F.validation.missingScheduledConcepts }}
+              </p>
 
               <p v-if="!hojas.length"
                 class="rounded-lg border border-dashed border-default py-10 text-center text-sm text-muted">
@@ -544,7 +598,9 @@ const reviewEstimate = computed(() => currentEstimate.value)
                           <UIcon name="i-lucide-x" class="size-3" />
                         </button>
                       </span>
-                      <UButton icon="i-lucide-notebook-pen" size="xs" color="neutral" variant="outline"
+                      <UButton icon="i-lucide-notebook-pen" size="xs"
+                        :color="rowHasQuantity(r) && !r.logNoteIds.length ? 'warning' : 'neutral'"
+                        :variant="rowHasQuantity(r) && !r.logNoteIds.length ? 'soft' : 'outline'"
                         @click="openRowNotesPicker(r)">
                         {{ F.hojas.linkLogNotes }}
                       </UButton>
@@ -607,7 +663,7 @@ const reviewEstimate = computed(() => currentEstimate.value)
               class="sticky bottom-0 -mx-4 flex justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
               <UButton color="neutral" variant="ghost" icon="i-lucide-arrow-left" @click="() => void (step = 2)">{{
                 F.steps.hojas }}</UButton>
-              <UButton color="success" icon="i-lucide-send" :disabled="anyOverScheduled" :loading="saving"
+              <UButton color="success" icon="i-lucide-send" :disabled="!canSubmitEstimate" :loading="saving"
                 @click="submit">{{ F.submit }}</UButton>
             </div>
           </template>

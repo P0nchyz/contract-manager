@@ -290,6 +290,39 @@ export function createMockRepositories(): Repositories {
     if (SIGNING_ROLES.includes(currentUser().role as SigningRole)) applySignature(signatures)
   }
 
+  // --- estimate approval sequencing ----------------------------------------
+  // An estimate can only become APPROVED once every earlier period in the
+  // same contract has at least one APPROVED/paid estimate. Submitting and
+  // signing are never blocked by this — only the final approval transition.
+  function priorPeriodsApproved(contractId: string, periodIndex: number): boolean {
+    for (let p = 1; p < periodIndex; p++) {
+      const ok = db.estimates.some(
+        (x) => x.contractId === contractId && x.periodIndex === p && (x.status === 'approved' || x.status === 'paid'),
+      )
+      if (!ok) return false
+    }
+    return true
+  }
+  // Approves `e` if it's fully signed and every prior period already has an
+  // approved/paid estimate; otherwise leaves it at 'submitted' (fully signed,
+  // pending) with no error — the signer's own signature still succeeded.
+  function tryApproveEstimate(e: Estimate): void {
+    if (e.status !== 'submitted') return
+    if (!e.signatures.every((s) => s.status === 'signed')) return
+    if (!priorPeriodsApproved(e.contractId, e.periodIndex)) return
+    e.status = 'approved'
+    e.history.push(event('approved'))
+    promoteFollowingEstimates(e.contractId, e.periodIndex)
+  }
+  // Once `fromPeriodIndex` gets approved, any later period's estimate that
+  // was already fully signed but held pending may now also clear.
+  function promoteFollowingEstimates(contractId: string, fromPeriodIndex: number): void {
+    const followers = db.estimates
+      .filter((x) => x.contractId === contractId && x.periodIndex > fromPeriodIndex && x.status === 'submitted')
+      .sort((a, b) => a.periodIndex - b.periodIndex)
+    for (const f of followers) tryApproveEstimate(f)
+  }
+
   // --- estimate derivation helpers (closures; no `this` binding) ----------
   function upToLastByConcept(
     contractId: string,
@@ -629,6 +662,22 @@ export function createMockRepositories(): Repositories {
           throw new RepositoryError(409, `Ya existe una estimación aprobada para el período ${input.periodIndex}`, 'duplicate_period')
         }
 
+        // Can't skip ahead: an earlier period that still needs a new estimate
+        // (no estimate at all, or every one it has is rejected) must get one
+        // first. Periods with a draft/submitted/approved/paid estimate don't
+        // block — they already have something in progress or resolved.
+        for (let p = 1; p < input.periodIndex; p++) {
+          const forP = prior.filter((e) => e.periodIndex === p)
+          const needsNew = forP.length === 0 || forP.every((e) => e.status === 'rejected')
+          if (needsNew) {
+            throw new RepositoryError(
+              409,
+              `Primero debes crear una estimación para el período ${p}`,
+              'skipped_period',
+            )
+          }
+        }
+
         const periods = buildContractPeriods(contract)
         const periodDates = periods[input.periodIndex - 1]
         if (!periodDates) throw new RepositoryError(400, 'Período inválido', 'invalid_period')
@@ -766,12 +815,37 @@ export function createMockRepositories(): Repositories {
         if (!e) throw notFound('Estimación')
         if (e.status !== 'draft') throw new RepositoryError(409, 'Solo se envían borradores', 'wrong_status')
         if (!(e.hojas ?? []).length) throw new RepositoryError(409, 'Agrega al menos una Hoja Generadora', 'no_hojas')
-        // Every row needs a photo to submit
+        // Every row with quantity > 0 needs a photo AND at least one linked
+        // log note (rows registering 0 for the period are exempt — there's
+        // nothing to evidence).
         for (const h of (e.hojas ?? [])) {
           for (const r of h.rows) {
+            if (r.quantity <= 0) continue
             if (!r.photoFileId) {
               throw new RepositoryError(409, `La Hoja ${h.number} tiene una partida sin fotografía`, 'photo_required')
             }
+            if (!r.logNoteIds?.length) {
+              throw new RepositoryError(409, `La Hoja ${h.number} tiene una partida sin nota de bitácora vinculada`, 'lognote_required')
+            }
+          }
+        }
+        // Every concept scheduled (planned quantity > 0) for this period must
+        // have its own Hoja — even if it ends up registering 0 for the period.
+        const hojaConceptIds = new Set(e.hojas.map((h) => String(h.conceptId)))
+        const schedule = db.schedules.find((s) => s.contractId === e.contractId)
+        const scheduledConceptIds = new Set(
+          (schedule?.entries ?? [])
+            .filter((se) => se.periodIndex === e.periodIndex - 1 && se.plannedQuantity > 0)
+            .map((se) => String(se.conceptId)),
+        )
+        for (const cid of scheduledConceptIds) {
+          if (!hojaConceptIds.has(cid)) {
+            const concept = db.concepts.find((c) => String(c.id) === cid)
+            throw new RepositoryError(
+              409,
+              `Falta la Hoja del concepto ${concept?.specificationNumber ?? cid} programado para este período`,
+              'missing_scheduled_concept',
+            )
           }
         }
         // Block if another submitted/approved estimate holds this period
@@ -784,6 +858,10 @@ export function createMockRepositories(): Repositories {
         }
         e.status = 'submitted'
         e.history.push(event('submitted'))
+        // The superintendent creates/submits estimates — auto-sign their own
+        // slot immediately, same as log notes do on creation.
+        trySignAsCreator(e.signatures)
+        tryApproveEstimate(e)
         e.updatedAt = new Date()
         save()
         return clone(e)
@@ -836,26 +914,14 @@ export function createMockRepositories(): Repositories {
         if (e.status !== 'submitted') {
           throw new RepositoryError(409, 'Solo se firma una estimación enviada', 'wrong_status')
         }
+        // Recording this signer's own signature always succeeds — sequential
+        // periods can be submitted and signed freely. Only the final
+        // transition to APPROVED is held back if an earlier period isn't
+        // approved yet; the estimate simply stays "fully signed, pending"
+        // until that clears (see tryApproveEstimate/promoteFollowingEstimates).
         applySignature(e.signatures)
         e.history.push(event('signed'))
-        const allSigned = e.signatures.every((s) => s.status === 'signed')
-        if (allSigned) {
-          const priorEstimates = db.estimates.filter(
-            (x) => x.contractId === e.contractId && x.periodIndex < e.periodIndex,
-          )
-          const blocked = priorEstimates.find(
-            (x) => x.status !== 'approved' && x.status !== 'paid',
-          )
-          if (blocked) {
-            throw new RepositoryError(
-              409,
-              `La estimación del período ${blocked.periodIndex} debe aprobarse antes que ésta`,
-              'sequential_approval',
-            )
-          }
-          e.status = 'approved'
-          e.history.push(event('approved'))
-        }
+        tryApproveEstimate(e)
         e.updatedAt = new Date()
         save()
         return clone(e)

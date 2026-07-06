@@ -1,6 +1,8 @@
 <!-- app/pages/contracts/[contractId]/estimates/index.vue -->
 <script setup lang="ts">
+import { ref } from 'vue'
 import { S } from '~/constants/strings'
+import { isRepositoryError } from '~/data/errors'
 import { estimateStatusDisplay } from '~/utils/format'
 
 const route = useRoute()
@@ -15,6 +17,23 @@ const { data: estimates, status, error, refresh } = await useAsyncData(
 )
 
 const canCreate = computed(() => can('estimate:create'))
+
+// ─── Delete draft ─────────────────────────────────────────────────────────────
+const deletingId = ref<string | null>(null)
+const deleteError = ref<string | null>(null)
+async function deleteDraft(id: string) {
+  if (!confirm(S.estimateDetail.actions.deleteConfirm)) return
+  deletingId.value = id
+  deleteError.value = null
+  try {
+    await repos.estimates.delete(id)
+    await refresh()
+  } catch (e) {
+    deleteError.value = isRepositoryError(e) ? e.message : S.common.error
+  } finally {
+    deletingId.value = null
+  }
+}
 
 // Nuxt UI v3 / TanStack Table column definitions
 const columns = [
@@ -46,6 +65,8 @@ const columns = [
       <UAlert v-if="error" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="S.common.error"
         :actions="[{ label: 'Reintentar', color: 'neutral', variant: 'subtle', onClick: () => refresh() }]"
         class="mb-4" />
+      <UAlert v-if="deleteError" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="deleteError"
+        class="mb-4" />
 
       <!-- Changed from :rows to :data -->
       <UTable :data="estimates" :columns="columns" :loading="status === 'pending'"
@@ -76,7 +97,13 @@ const columns = [
         </template>
 
         <template #actions-cell="{ row }">
-          <div class="flex justify-end">
+          <div class="flex justify-end gap-1">
+            <template v-if="row.original.status === 'draft' && canCreate">
+              <UButton color="error" variant="ghost" icon="i-lucide-trash-2" size="xs"
+                :loading="deletingId === row.original.id" @click.stop="deleteDraft(row.original.id)" />
+              <UButton color="neutral" variant="ghost" icon="i-lucide-pencil" size="xs"
+                :to="`/contracts/${contractId}/estimates/new?edit=${row.original.id}`" @click.stop />
+            </template>
             <UButton color="neutral" variant="ghost" icon="i-lucide-chevron-right"
               :to="`/contracts/${contractId}/estimates/${row.original.id}`" />
           </div>

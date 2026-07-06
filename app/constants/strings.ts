@@ -152,6 +152,7 @@ export const S = {
       dates: 'Fechas del período',
       noPeriods: 'No hay períodos disponibles.',
       helper: 'Una vez seleccionado el período, guarda el borrador para comenzar a agregar Hojas Generadoras.',
+      sequentialHint: 'Solo puedes crear una estimación nueva para el período más antiguo que aún no tiene ninguna estimación. Los períodos posteriores se habilitan conforme se van creando los anteriores.',
     },
     hojas: {
       title: 'Hojas generadoras',
@@ -194,6 +195,7 @@ export const S = {
       pickLogNote: 'Selecciona una nota de bitácora',
       noLogNotes: 'No hay notas de bitácora en este contrato.',
       removeLogNote: 'Desvincular nota',
+      addAllRemaining: 'Agregar todos los conceptos pendientes de este período',
     },
     evidenceSection: {
       title: 'Evidencia fotográfica de la estimación',
@@ -211,7 +213,9 @@ export const S = {
     validation: {
       periodRequired: 'Selecciona un período.',
       noHojas: 'Agrega al menos una Hoja Generadora.',
-      photoRequired: 'Cada renglón requiere una fotografía para poder enviar.',
+      photoRequired: 'Cada renglón con volumen registrado requiere una fotografía para poder enviar.',
+      logNoteRequired: 'Cada renglón con volumen registrado requiere al menos una nota de bitácora vinculada para poder enviar.',
+      missingScheduledConcepts: 'Falta agregar la Hoja de uno o más conceptos programados para este período (puedes registrar 0 si no se ejecutaron).',
       exceedsSchedule: 'Hay Hojas que superan el volumen programado para este periodo.',
     },
   },
@@ -297,12 +301,16 @@ export const S = {
       markPaid: 'Marcar como pagada',
       sign: 'Firmar y aprobar',
       newForPeriod: 'Nueva estimación para el período',
+      editDraft: 'Editar borrador',
+      deleteDraft: 'Eliminar borrador',
+      deleteConfirm: '¿Eliminar este borrador? Esta acción no se puede deshacer.',
     },
     note: {
-      modalTitle: 'Rechazar con notas',
       placeholder: 'Escribe una nota…',
-      perSectionHint: 'Agrega una nota en al menos una sección para explicar el rechazo.',
+      perSectionHint: 'Puedes agregar una nota directamente en cualquier sección de abajo. Se requiere al menos una para rechazar.',
       atLeastOneRequired: 'Agrega al menos una nota antes de rechazar.',
+      confirmReject: '¿Rechazar esta estimación con las notas capturadas? Esta acción no se puede deshacer.',
+      addNote: 'Agregar nota',
       cover: 'Nota — Carátula',
       services: 'Nota — Servicios Ejecutados',
       summary: 'Nota — Resumen por Partida',
@@ -312,6 +320,7 @@ export const S = {
     banner: {
       rejected: 'Rechazada con notas',
       notEditable: 'Las estimaciones rechazadas no se pueden editar. Crea una nueva estimación para este período.',
+      pendingPriorApproval: 'Todas las firmas están completas. Se aprobará automáticamente en cuanto se apruebe la estimación del período {period}.',
     },
   },
   workflow: {
