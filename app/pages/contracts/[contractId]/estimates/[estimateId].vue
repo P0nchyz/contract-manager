@@ -61,11 +61,15 @@ const canRejectWithNotes = computed(() =>
   (role.value === 'resident' || role.value === 'supervisor') &&
   mySlot.value?.status !== 'signed',
 )
-const canPay = computed(() => st.value === 'approved' && can('estimate:pay'))
+const canPay = computed(() => st.value === 'approved' && !!estimate.value?.paymentRequest && can('estimate:pay'))
+const canRequestPayment = computed(() =>
+  st.value === 'approved' && !estimate.value?.paymentRequest && can('estimate:requestPayment'),
+)
 const canCreateNew = computed(() => st.value === 'rejected' && can('estimate:create'))
 const canManageDraft = computed(() => st.value === 'draft' && can('estimate:create'))
 const hasBarAction = computed(() =>
-  canSign.value || canRejectWithNotes.value || canPay.value || canCreateNew.value || canManageDraft.value,
+  canSign.value || canRejectWithNotes.value || canPay.value || canRequestPayment.value ||
+  canCreateNew.value || canManageDraft.value,
 )
 
 // Fully signed but held at 'submitted' because an earlier period isn't approved yet
@@ -91,6 +95,9 @@ async function run(fn: () => Promise<unknown>) {
 }
 const sign = () => run(() => repos.estimates.sign(estimateId.value))
 const markPaid = () => run(() => repos.estimates.markPaid(estimateId.value))
+
+// ─── Request payment ──────────────────────────────────────────────────────────
+const requestPaymentOpen = ref(false)
 
 async function deleteDraft() {
   if (!estimate.value) return
@@ -244,6 +251,53 @@ function openViewer(file: FileAsset) {
             </template>
           </EstimateDocument>
 
+          <!-- Payment request -->
+          <UCard v-if="estimate.paymentRequest">
+            <template #header>
+              <div class="flex items-center gap-2 font-medium">
+                <UIcon name="i-lucide-banknote" class="size-4 text-muted" />
+                {{ ED.paymentRequest.sectionTitle }}
+              </div>
+            </template>
+            <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+              <div>
+                <dt class="text-xs text-muted">{{ ED.paymentRequest.accountHolder }}</dt>
+                <dd class="font-medium text-highlighted">{{ estimate.paymentRequest.accountHolder }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-muted">{{ ED.paymentRequest.bankName }}</dt>
+                <dd class="text-highlighted">{{ estimate.paymentRequest.bankName }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-muted">{{ ED.paymentRequest.accountNumber }}</dt>
+                <dd class="font-mono text-sm text-highlighted">{{ estimate.paymentRequest.accountNumber }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-muted">{{ ED.paymentRequest.clabe }}</dt>
+                <dd class="font-mono text-sm text-highlighted">{{ estimate.paymentRequest.clabe }}</dd>
+              </div>
+              <div class="sm:col-span-2">
+                <dt class="text-xs text-muted">{{ ED.paymentRequest.requestedBy }}</dt>
+                <dd class="text-highlighted">
+                  {{ data?.nameOf(estimate.paymentRequest.requestedById) }} ·
+                  {{ formatDate(estimate.paymentRequest.requestedAt) }}
+                </dd>
+              </div>
+            </dl>
+
+            <div class="mt-4">
+              <p class="mb-2 text-xs text-muted">{{ ED.paymentRequest.documents }}</p>
+              <div class="flex flex-wrap gap-2">
+                <button v-for="fid in estimate.paymentRequest.fileIds" :key="fid" type="button"
+                  class="inline-flex items-center gap-1.5 rounded-md border border-default bg-elevated/40 px-2.5 py-1.5 text-sm text-highlighted transition-colors hover:bg-elevated/70"
+                  @click="() => { const f = data?.fileOf(fid); if (f) openViewer(f) }">
+                  <UIcon name="i-lucide-file" class="size-3.5 text-muted" />
+                  {{ data?.fileName(fid) }}
+                </button>
+              </div>
+            </div>
+          </UCard>
+
           <!-- Signatures -->
           <UCard>
             <template #header>
@@ -313,6 +367,10 @@ function openViewer(file: FileAsset) {
             <UButton v-if="canSign" color="success" icon="i-lucide-pen-line" :loading="busy" @click="sign">
               {{ ED.actions.sign }}
             </UButton>
+            <UButton v-if="canRequestPayment" color="success" variant="soft" icon="i-lucide-banknote" :loading="busy"
+              @click="() => void (requestPaymentOpen = true)">
+              {{ ED.actions.requestPayment }}
+            </UButton>
             <UButton v-if="canPay" color="success" icon="i-lucide-banknote" :loading="busy" @click="markPaid">
               {{ ED.actions.markPaid }}
             </UButton>
@@ -327,6 +385,10 @@ function openViewer(file: FileAsset) {
     </template>
 
   </UDashboardPanel>
+
+  <!-- Request payment modal — must live outside UDashboardPanel -->
+  <RequestPaymentModal v-if="estimate" v-model:open="requestPaymentOpen" :estimate-id="estimate.id"
+    :contract-id="contractId" :estimate-number="estimate.number" @requested="refresh" />
 
   <!-- File viewer — must live outside UDashboardPanel -->
   <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />

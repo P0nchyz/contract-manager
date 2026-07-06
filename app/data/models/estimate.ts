@@ -109,6 +109,21 @@ export interface EstimateCalculations {
   total: Money                 // estimateTotal - amortizationTotal - retentions - cincoAlMillarSfp
 }
 
+/**
+ * Payment request — the superintendent submits account details plus
+ * supporting documentation once an estimate is approved; financial can only
+ * see/pay estimates that have one of these attached.
+ */
+export interface PaymentRequest {
+  accountHolder: string
+  bankName: string
+  accountNumber: string
+  clabe: string
+  fileIds: FileId[]
+  requestedById: UserId
+  requestedAt: Date
+}
+
 export interface EstimateSummary {
   partidas: EstimatePartidaRow[]
   partidasSubtotal: Money
@@ -125,6 +140,8 @@ export type EstimateSectionNotes = Record<string, string>
 /**
  * A construction estimate (estimación). Only Superintendents create these.
  * Lifecycle: draft -> submitted -> rejected | approved -> paid.
+ * Once approved, the superintendent submits a payment request (account
+ * details + supporting docs) before financial can see it to pay it.
  * A rejected estimate carries per-section notes and is NOT editable — a new
  * estimate must be created for the period. Only APPROVED estimates count
  * toward the one-per-period rule.
@@ -147,6 +164,9 @@ export interface Estimate {
   evidenceFileIds: FileId[]
 
   sectionNotes: EstimateSectionNotes
+
+  /** Set once the superintendent requests payment on an approved estimate. */
+  paymentRequest: PaymentRequest | null
 
   signatures: Signature[]
   history: WorkflowEvent[]

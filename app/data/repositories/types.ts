@@ -172,6 +172,14 @@ export interface UpdateEstimateDraftInput {
 /** Section notes keyed by 'cover' | 'services' | 'summary' | 'evidence' | `hoja:${conceptId}`. At least one must be non-empty. */
 export type EstimateRejectNotesInput = Record<string, string>
 
+export interface RequestPaymentInput {
+  accountHolder: string
+  bankName: string
+  accountNumber: string
+  clabe: string
+  fileIds: FileId[] // at least one required
+}
+
 export interface EstimateRepository {
   listByContract(contractId: ContractId, params?: ListParams): Promise<Estimate[]>
   getById(id: EstimateId): Promise<Estimate>
@@ -182,6 +190,8 @@ export interface EstimateRepository {
   approve(id: EstimateId): Promise<Estimate>
   /** Reject with at least one per-section note. Resident or supervisor — only before either has signed. */
   rejectWithNotes(id: EstimateId, notes: EstimateRejectNotesInput): Promise<Estimate>
+  /** Superintendent submits account details + docs on an approved estimate, so financial can see it to pay it. */
+  requestPayment(id: EstimateId, input: RequestPaymentInput): Promise<Estimate>
   markPaid(id: EstimateId, paymentEvidenceFileId?: FileId): Promise<Estimate> // financial
   sign(id: EstimateId): Promise<Estimate>
 }

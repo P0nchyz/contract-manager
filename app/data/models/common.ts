@@ -91,6 +91,7 @@ export type WorkflowAction =
   | 'pending_entity'  // all three signed; entity approval required
   | 'entity_approved' // entity explicitly approved
   | 'approved'
+  | 'payment_requested'
   | 'paid'
   | 'signed'
   | 'reopened' // a returned/rejected item edited back into draft

@@ -172,6 +172,7 @@ function loadDb<T extends object>(fallback: T): T {
         }
         if (!Array.isArray(e.lineItems)) e.lineItems = []
         if (!Array.isArray(e.evidenceFileIds)) e.evidenceFileIds = []
+        if (e.paymentRequest === undefined) e.paymentRequest = null
         // with_notes was merged into rejected (both now carry per-section notes)
         if (e.status === 'with_notes') e.status = 'rejected'
       }
@@ -653,7 +654,9 @@ export function createMockRepositories(): Repositories {
         const user = currentUser()
         const list = db.estimates.filter((e) => {
           if (e.contractId !== contractId) return false
-          if (user.role === 'financial') return e.status === 'approved' || e.status === 'paid'
+          if (user.role === 'financial') {
+            return (e.status === 'approved' && !!e.paymentRequest) || e.status === 'paid'
+          }
           // Drafts are only visible to their creator
           if (e.status === 'draft') return e.createdById === user.id
           return true
@@ -734,6 +737,7 @@ export function createMockRepositories(): Repositories {
           } },
           evidenceFileIds: [],
           sectionNotes: {},
+          paymentRequest: null,
           signatures: pendingSignatures(),
           history: [event('created')],
           createdById: currentUserId,
@@ -917,10 +921,43 @@ export function createMockRepositories(): Repositories {
         save()
         return clone(e)
       },
+      async requestPayment(id, input) {
+        await delay()
+        const e = db.estimates.find((x) => x.id === id)
+        if (!e) throw notFound('Estimación')
+        if (e.status !== 'approved') {
+          throw new RepositoryError(409, 'Solo se solicita el pago de una estimación aprobada', 'wrong_status')
+        }
+        if (currentUser().role !== 'superintendent') {
+          throw new RepositoryError(403, 'Solo el superintendente solicita el pago', 'forbidden')
+        }
+        if (!input.accountHolder?.trim() || !input.bankName?.trim() || !input.accountNumber?.trim() || !input.clabe?.trim()) {
+          throw new RepositoryError(409, 'Completa los datos de la cuenta bancaria', 'account_details_required')
+        }
+        if (!input.fileIds?.length) {
+          throw new RepositoryError(409, 'Adjunta al menos un documento de soporte', 'documents_required')
+        }
+        e.paymentRequest = {
+          accountHolder: input.accountHolder.trim(),
+          bankName: input.bankName.trim(),
+          accountNumber: input.accountNumber.trim(),
+          clabe: input.clabe.trim(),
+          fileIds: [...input.fileIds],
+          requestedById: currentUserId,
+          requestedAt: new Date(),
+        }
+        e.history.push(event('payment_requested'))
+        e.updatedAt = new Date()
+        save()
+        return clone(e)
+      },
       async markPaid(id, paymentEvidenceFileId) {
         await delay()
         const e = db.estimates.find((x) => x.id === id)
         if (!e) throw notFound('Estimación')
+        if (e.status !== 'approved' || !e.paymentRequest) {
+          throw new RepositoryError(409, 'Esta estimación no tiene una solicitud de pago activa', 'no_payment_request')
+        }
         e.status = 'paid'
         e.history.push(event('paid'))
         e.updatedAt = new Date()

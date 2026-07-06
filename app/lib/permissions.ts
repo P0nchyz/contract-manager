@@ -11,6 +11,7 @@ export type Permission =
   | 'estimate:create'          // superintendent creates estimates
   | 'estimate:view'
   | 'estimate:rejectWithNotes' // resident + supervisor, until they've signed
+  | 'estimate:requestPayment'  // superintendent only, on approved estimates
   | 'estimate:pay'             // financial only
   | 'logNote:create'
   | 'agreement:create'         // resident + superintendent
@@ -44,7 +45,7 @@ const MATRIX: Record<Role, readonly Permission[]> = {
   ],
 
   superintendent: [
-    'estimate:create', 'estimate:view',
+    'estimate:create', 'estimate:view', 'estimate:requestPayment',
     'logNote:create', 'agreement:create',
     'evidence:upload', 'evidence:create', 'file:upload',
     'sign', 'financial:view',

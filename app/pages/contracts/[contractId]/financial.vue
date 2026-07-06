@@ -3,6 +3,7 @@
 import { ref, computed } from 'vue'
 import { S } from '~/constants/strings'
 import type { BreakdownSlice } from '~/components/FinancialBreakdownChart.client.vue'
+import type { FileAsset } from '~/data/models'
 
 definePageMeta({ requiredPermission: 'financial:view' })
 
@@ -19,17 +20,22 @@ const canPay = computed(() => can('estimate:pay'))
 const { data, status, error, refresh } = await useAsyncData(
   () => `financial-${contractId.value}`,
   async () => {
-    const [contract, financials, estimates, sections, concepts] = await Promise.all([
+    const [contract, financials, estimates, sections, concepts, files, users] = await Promise.all([
       repos.contracts.getById(contractId.value),
       repos.contracts.getFinancials(contractId.value),
       repos.estimates.listByContract(contractId.value),
       repos.concepts.listSectionsByContract(contractId.value),
       repos.concepts.listByContract(contractId.value),
+      repos.files.listFiles(contractId.value).catch(() => []),
+      repos.users.list().catch(() => []),
     ])
+    const fileOf = (id: string) => files.find((f) => f.id === id) ?? null
+    const nameOf = (id: string | null | undefined) =>
+      (id && users.find((u) => u.id === id)?.fullName) || id || '—'
 
-    // Unpaid = approved but not yet paid
+    // Unpaid = approved AND payment requested, but not yet paid
     const unpaidEstimates = estimates
-      .filter((e) => e.status === 'approved')
+      .filter((e) => e.status === 'approved' && e.paymentRequest)
       .sort((a, b) => a.number - b.number)
 
     // Total amortized anticipo across all executed estimates
@@ -85,6 +91,8 @@ const { data, status, error, refresh } = await useAsyncData(
       unpaidEstimates,
       amortized,
       slices,
+      fileOf,
+      nameOf,
     }
   },
 )
@@ -107,6 +115,14 @@ const balanceToPay = computed(() =>
 // ─── Mark paid modal ─────────────────────────────────────────────────────────
 const payModalOpen = ref(false)
 const payingEstimate = ref<{ id: string; number: number } | null>(null)
+
+// ─── View payment request documents ──────────────────────────────────────────
+const viewerOpen = ref(false)
+const viewingFile = ref<FileAsset | null>(null)
+function openFileViewer(fileId: string) {
+  const f = data.value?.fileOf(fileId)
+  if (f) { viewingFile.value = f; viewerOpen.value = true }
+}
 
 function openPayModal(est: { id: string; number: number }) {
   payingEstimate.value = est
@@ -267,6 +283,7 @@ async function onPaid() {
                 <tr>
                   <th class="px-4 py-2.5 text-left font-medium">{{ FIN.unpaid.number }}</th>
                   <th class="px-4 py-2.5 text-left font-medium">{{ FIN.unpaid.period }}</th>
+                  <th class="px-4 py-2.5 text-left font-medium">{{ FIN.unpaid.account }}</th>
                   <th class="px-4 py-2.5 text-right font-medium">{{ FIN.unpaid.amount }}</th>
                   <th v-if="canPay" class="px-4 py-2.5" />
                 </tr>
@@ -283,6 +300,19 @@ async function onPaid() {
                   <td class="px-4 py-3 text-muted">
                     {{ formatDate(est.periodStart) }} – {{ formatDate(est.periodEnd) }}
                   </td>
+                  <td class="px-4 py-3">
+                    <div v-if="est.paymentRequest" class="text-xs">
+                      <div class="font-medium text-highlighted">{{ est.paymentRequest.bankName }}</div>
+                      <div class="text-muted">{{ est.paymentRequest.accountNumber }}</div>
+                      <div class="mt-1 flex flex-wrap gap-1.5">
+                        <button v-for="fid in est.paymentRequest.fileIds" :key="fid" type="button"
+                          class="inline-flex items-center gap-1 rounded bg-elevated px-1.5 py-0.5 text-muted transition-colors hover:bg-elevated/70 hover:text-highlighted"
+                          @click="openFileViewer(fid)">
+                          <UIcon name="i-lucide-file" class="size-3" />{{ data.fileOf(fid)?.name ?? fid }}
+                        </button>
+                      </div>
+                    </div>
+                  </td>
                   <td class="px-4 py-3 text-right tabular-nums font-semibold text-highlighted">
                     {{ formatMoney(est.summary?.calculations?.total ?? 0) }}
                   </td>
@@ -296,7 +326,7 @@ async function onPaid() {
               </tbody>
               <tfoot class="border-t-2 border-default bg-elevated/50">
                 <tr>
-                  <td colspan="2" class="px-4 py-2.5 text-right text-xs font-medium text-muted">
+                  <td colspan="3" class="px-4 py-2.5 text-right text-xs font-medium text-muted">
                     Total
                   </td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-bold text-highlighted">
@@ -377,4 +407,7 @@ async function onPaid() {
       </div>
     </template>
   </UDashboardPanel>
+
+  <!-- File viewer — must live outside UDashboardPanel -->
+  <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />
 </template>

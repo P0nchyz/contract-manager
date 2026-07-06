@@ -158,6 +158,15 @@ export const estimates: Estimate[] = [
     },
     evidenceFileIds: ['FILE-10'] as FileAsset['id'][],
     sectionNotes: {},
+    paymentRequest: {
+      accountHolder: 'Constructora del Valle S.A. de C.V.',
+      bankName: 'BBVA México',
+      accountNumber: '0123456789',
+      clabe: '012180001234567895',
+      fileIds: ['FILE-01'] as FileAsset['id'][],
+      requestedById: 'U-SUP',
+      requestedAt: d('2024-02-06'),
+    },
     signatures: [
       { id: 'SG-1', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-02-02'), status: 'signed' },
       { id: 'SG-2', role: 'supervisor', userId: 'U-SVR', signedAt: d('2024-02-04'), status: 'signed' },
@@ -243,6 +252,7 @@ export const estimates: Estimate[] = [
       'hoja:CN-02': 'Falta soporte fotográfico del segundo tramo de modelado. Adjuntar evidencia por renglón.',
       evidence: 'Faltan fotografías generales del avance de este periodo.',
     },
+    paymentRequest: null,
     signatures: [
       { id: 'SG-4', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-03-02'), status: 'signed' },
       { id: 'SG-5', role: 'supervisor', userId: null, signedAt: null, status: 'pending' },
