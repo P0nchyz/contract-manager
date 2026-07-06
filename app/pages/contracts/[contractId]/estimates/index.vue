@@ -3,7 +3,7 @@
 import { ref } from 'vue'
 import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
-import { estimateStatusDisplay } from '~/utils/format'
+import { estimateStatusDisplay, compareEstimatesForDisplay } from '~/utils/format'
 
 const route = useRoute()
 const repos = useRepositories()
@@ -15,8 +15,8 @@ const { data: estimates, status, error, refresh } = await useAsyncData(
   () => repos.estimates.listByContract(contractId.value),
   { default: () => [] }
 )
-// Newest estimate on top
-const sortedEstimates = computed(() => [...estimates.value].sort((a, b) => b.number - a.number))
+// Newest period first; within the same period, approved/paid > submitted > draft > rejected
+const sortedEstimates = computed(() => [...estimates.value].sort(compareEstimatesForDisplay))
 
 const canCreate = computed(() => can('estimate:create'))
 

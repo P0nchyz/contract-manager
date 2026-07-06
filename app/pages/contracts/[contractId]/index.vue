@@ -1,6 +1,7 @@
 <!-- app/pages/contracts/[contractId]/index.vue -->
 <script setup lang="ts">
 import { buildScheduleCurve, buildPeriods, currentPeriodIndex as getCurrentPeriodIdx, type ConceptMeta, type PeriodProgress } from '~/data/calc/schedule'
+import { compareEstimatesForDisplay } from '~/utils/format'
 import { S } from '~/constants/strings'
 import type { Permission } from '~/lib/permissions'
 
@@ -53,7 +54,7 @@ const { data, status, error, refresh } = await useAsyncData(
       contract,
       financials,
       recentLogNotes: [...logNotes].sort((a, b) => b.folio - a.folio).slice(0, 5),
-      recentEstimates: [...estimates].sort((a, b) => b.number - a.number).slice(0, 5),
+      recentEstimates: [...estimates].sort(compareEstimatesForDisplay).slice(0, 5),
       curve: schedule
         ? buildScheduleCurve(periods, (schedule.entries ?? []), conceptMetas, progress, curIdx)
         : [],

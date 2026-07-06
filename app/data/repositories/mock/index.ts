@@ -322,6 +322,26 @@ export function createMockRepositories(): Repositories {
       .sort((a, b) => a.periodIndex - b.periodIndex)
     for (const f of followers) tryApproveEstimate(f)
   }
+  // If an estimate is rejected, every later period built on top of it is no
+  // longer valid either — auto-reject any newer draft/submitted estimates so
+  // they must be redone once the earlier period is fixed. Already-rejected
+  // followers are left as-is (no duplicate history spam); approved/paid ones
+  // shouldn't exist yet for a later period while an earlier one is unresolved
+  // (see priorPeriodsApproved), so they're deliberately left untouched here too.
+  function cascadeRejectFollowingEstimates(rejected: Estimate): void {
+    const followers = db.estimates.filter(
+      (x) => x.contractId === rejected.contractId && x.periodIndex > rejected.periodIndex &&
+        (x.status === 'draft' || x.status === 'submitted'),
+    )
+    for (const f of followers) {
+      f.status = 'rejected'
+      f.sectionNotes = {
+        cover: `Rechazada automáticamente: la estimación del período ${rejected.periodIndex} fue rechazada y debe corregirse primero.`,
+      }
+      f.history.push(event('rejected'))
+      f.updatedAt = new Date()
+    }
+  }
 
   // --- estimate derivation helpers (closures; no `this` binding) ----------
   function upToLastByConcept(
@@ -893,6 +913,7 @@ export function createMockRepositories(): Repositories {
         e.sectionNotes = cleaned
         e.history.push(event('rejected'))
         e.updatedAt = new Date()
+        cascadeRejectFollowingEstimates(e)
         save()
         return clone(e)
       },

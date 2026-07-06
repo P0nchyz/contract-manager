@@ -4,7 +4,7 @@
  * as integer cents everywhere; these are the only place that converts to pesos
  * for display.
  */
-import type { AgreementStatus, ContractStatus, EstimateStatus, Money, Role } from '~/data/models'
+import type { AgreementStatus, ContractStatus, Estimate, EstimateStatus, Money, Role } from '~/data/models'
 import { S } from '~/constants/strings'
 
 const mxn = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' })
@@ -47,6 +47,20 @@ export const estimateStatusDisplay: Record<EstimateStatus, StatusDisplay> = {
   rejected: { label: S.estimateStatus.rejected, color: 'error', variant: 'solid' },
   approved: { label: S.estimateStatus.approved, color: 'success', variant: 'solid' },
   paid: { label: S.estimateStatus.paid, color: 'info', variant: 'solid' },
+}
+
+// Display order for estimate lists: higher period first, then within the same
+// period — approved/paid, then submitted (sent), then draft, then rejected.
+const ESTIMATE_STATUS_SORT_RANK: Record<EstimateStatus, number> = {
+  approved: 0,
+  paid: 0,
+  submitted: 1,
+  draft: 2,
+  rejected: 3,
+}
+export function compareEstimatesForDisplay(a: Estimate, b: Estimate): number {
+  if (a.periodIndex !== b.periodIndex) return b.periodIndex - a.periodIndex
+  return ESTIMATE_STATUS_SORT_RANK[a.status] - ESTIMATE_STATUS_SORT_RANK[b.status]
 }
 
 export const agreementStatusDisplay: Record<AgreementStatus, StatusDisplay> = {
