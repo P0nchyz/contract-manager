@@ -1,4 +1,4 @@
-<!-- app/pages/contracts/[contractId]/schedule.vue -->
+<!-- app/pages/contracts/[contractId]/progress.vue -->
 <script setup lang="ts">
 import { S } from '~/constants/strings'
 import {
@@ -15,14 +15,14 @@ import { groupConceptsBySections } from '~/composables/useConceptSections'
 
 definePageMeta({ requiredPermission: 'estimate:view' })
 
-const SP = S.schedulePage
+const SP = S.progressPage
 
 const route = useRoute()
 const repos = useRepositories()
 const contractId = computed(() => route.params.contractId as string)
 
 const { data, status, error, refresh } = await useAsyncData(
-  () => `schedule-${contractId.value}`,
+  () => `progress-${contractId.value}`,
   async () => {
     const [contract, schedule, estimates, concepts, sections] = await Promise.all([
       repos.contracts.getById(contractId.value),
@@ -163,7 +163,7 @@ watch(data, (d) => {
 </script>
 
 <template>
-  <UDashboardPanel id="schedule">
+  <UDashboardPanel id="progress">
     <template #header>
       <UDashboardNavbar :title="SP.title">
         <template #leading>
@@ -268,8 +268,8 @@ watch(data, (d) => {
           </template>
 
           <div class="px-4 py-4">
-            <ScheduleGantt :entries="data.ganttEntries" :periods="data.periods" :current-period-index="data.curIdx"
-              :height="ganttHeight" />
+            <ScheduleGantt :entries="data.ganttEntries" :periods="data.periods"
+              :current-period-index="data.curIdx" :height="ganttHeight" />
           </div>
         </UCard>
 
@@ -328,18 +328,18 @@ watch(data, (d) => {
                       <span class="ml-1 text-xs text-muted">({{ c.unit }})</span>
                     </div>
                     <div class="flex items-center gap-1.5 shrink-0 text-xs tabular-nums">
-                      <template v-if="(data.plannedByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0) > 0">
-                        <span class="font-medium" :class="(data.actualByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0) >=
+                      <template
+                        v-if="(data.plannedByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0) > 0">
+                        <span class="font-medium" :class="
+                          (data.actualByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0) >=
                             (data.plannedByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0)
                             ? 'text-success'
                             : activePeriodTab < data.curIdx ? 'text-error' : 'text-highlighted'
-                          ">
-                          {{ (data.actualByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0).toLocaleString('es-MX')
-                          }}
+                        ">
+                          {{ (data.actualByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0).toLocaleString('es-MX') }}
                         </span>
                         <span class="text-muted">
-                          / {{ (data.plannedByConceptPeriod[String(c.id)]?.[activePeriodTab] ??
-                            0).toLocaleString('es-MX') }}
+                          / {{ (data.plannedByConceptPeriod[String(c.id)]?.[activePeriodTab] ?? 0).toLocaleString('es-MX') }}
                           {{ c.unit }}
                         </span>
                       </template>

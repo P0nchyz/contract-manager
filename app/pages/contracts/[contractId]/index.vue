@@ -73,8 +73,8 @@ const quickActions = computed<QuickAction[]>(() => {
     [
       { label: S.actions.newLogNote, icon: 'i-lucide-notebook-pen', to: `${base}/logbook/new`, permission: 'logNote:create' },
       { label: S.actions.uploadEvidence, icon: 'i-lucide-image-plus', to: `${base}/evidence`, permission: 'evidence:upload' },
-      { label: S.actions.conceptCatalog, icon: 'i-lucide-list', to: `${base}/concepts` },
-      { label: S.actions.schedule, icon: 'i-lucide-chart-gantt', to: `${base}/schedule` },
+      { label: S.actions.conceptCatalog, icon: 'i-lucide-list', to: `${base}/contract?tab=concepts` },
+      { label: S.actions.schedule, icon: 'i-lucide-chart-gantt', to: `${base}/progress` },
       { label: S.actions.files, icon: 'i-lucide-folder', to: `${base}/files` },
     ] satisfies QuickAction[]
   ).filter((a) => !a.permission || can(a.permission))

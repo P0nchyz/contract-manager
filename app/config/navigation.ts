@@ -39,7 +39,7 @@ export function buildNavigation(opts: {
 
     if (can('estimate:view')) {
       items.push({ label: S.nav.estimates, icon: 'i-lucide-file-spreadsheet', to: `${base}/estimates` })
-      items.push({ label: S.nav.schedule,  icon: 'i-lucide-chart-gantt',      to: `${base}/schedule` })
+      items.push({ label: S.nav.progress, icon: 'i-lucide-chart-gantt', to: `${base}/progress` })
     }
 
     if (can('financial:view')) {
@@ -47,7 +47,6 @@ export function buildNavigation(opts: {
     }
 
     if (can('estimate:view')) {
-      items.push({ label: S.nav.concepts, icon: 'i-lucide-list',  to: `${base}/concepts` })
       items.push({ label: S.nav.evidence, icon: 'i-lucide-image', to: `${base}/evidence` })
       items.push({ label: S.nav.files,    icon: 'i-lucide-folder', to: `${base}/files` })
     }

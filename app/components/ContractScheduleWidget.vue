@@ -20,7 +20,7 @@ defineProps<{
         </div>
         <UButton
           v-if="contractId"
-          :to="`/contracts/${contractId}/schedule`"
+          :to="`/contracts/${contractId}/progress`"
           size="xs"
           color="neutral"
           variant="ghost"

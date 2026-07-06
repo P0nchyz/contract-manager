@@ -48,9 +48,8 @@ export const S = {
     dashboard: 'Tablero',
     logbook: 'Bitácora',
     estimates: 'Estimaciones',
-    schedule: 'Programa de obra',
+    progress: 'Progreso',
     financial: 'Financiero',
-    concepts: 'Catálogo de conceptos',
     evidence: 'Evidencias',
     files: 'Archivos',
     contract: 'Contrato',
@@ -112,7 +111,7 @@ export const S = {
     newLogNote: 'Nueva nota',
     uploadEvidence: 'Subir evidencia',
     conceptCatalog: 'Catálogo de conceptos',
-    schedule: 'Programa de obra',
+    schedule: 'Progreso',
     files: 'Archivos',
   },
   conceptCatalog: {
@@ -127,12 +126,17 @@ export const S = {
       unitPrice: 'P.U.',
       contractedQty: 'Vol. contratado',
       contractedAmount: 'Importe contratado',
-      executed: 'Vol. ejecutado',
-      executedAmount: 'Importe ejecutado',
-      remaining: 'Vol. por ejecutar',
     },
     search: 'Buscar concepto…',
     total: 'Total contratado',
+  },
+  scheduleMatrix: {
+    title: 'Programa de obra',
+    hint: 'Volumen contratado por concepto, distribuido entre los períodos de este contrato. Solo lectura — se captura al crear el contrato.',
+    empty: 'Este contrato no tiene programa de obra registrado.',
+    concept: 'Concepto',
+    totalContracted: 'Total contratado',
+    noSection: 'Sin partida',
   },
   estimateForm: {
     title: 'Nueva estimación',
@@ -337,6 +341,11 @@ export const S = {
   },
   contractInfo: {
     title: 'Información del contrato',
+    tabs: {
+      general: 'General',
+      concepts: 'Catálogo de conceptos',
+      schedule: 'Programa de obra',
+    },
     sections: {
       general: 'Datos generales',
       parties: 'Partes',
@@ -743,8 +752,8 @@ export const S = {
     verMas: 'Ver más',
     verMenos: 'Ver menos',
   },
-  schedulePage: {
-    title: 'Programa de obra',
+  progressPage: {
+    title: 'Progreso del contrato',
     summary: {
       physicalProgress: 'Avance físico',
       financialProgress: 'Avance financiero',
