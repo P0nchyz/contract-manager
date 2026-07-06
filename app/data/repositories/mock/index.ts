@@ -933,7 +933,7 @@ export function createMockRepositories(): Repositories {
       async listByContract(contractId) {
         await delay()
         return clone(
-          db.logNotes.filter((n) => n.contractId === contractId).sort((a, b) => a.folio - b.folio),
+          db.logNotes.filter((n) => n.contractId === contractId).sort((a, b) => b.folio - a.folio),
         )
       },
       async getById(id) {

@@ -15,6 +15,8 @@ const { data: estimates, status, error, refresh } = await useAsyncData(
   () => repos.estimates.listByContract(contractId.value),
   { default: () => [] }
 )
+// Newest estimate on top
+const sortedEstimates = computed(() => [...estimates.value].sort((a, b) => b.number - a.number))
 
 const canCreate = computed(() => can('estimate:create'))
 
@@ -69,7 +71,7 @@ const columns = [
         class="mb-4" />
 
       <!-- Changed from :rows to :data -->
-      <UTable :data="estimates" :columns="columns" :loading="status === 'pending'"
+      <UTable :data="sortedEstimates" :columns="columns" :loading="status === 'pending'"
         :empty-state="{ icon: 'i-lucide-inbox', label: S.contractDashboard.noEstimates }" class="w-full">
         <!-- Slot names use -cell and data is inside row.original -->
         <template #number-cell="{ row }">
