@@ -251,7 +251,13 @@ export interface CloseFlowRepository<TEntity, TId> {
   sign(id: TId): Promise<TEntity>
 }
 export type ReceptionRepository = CloseFlowRepository<ReceptionStatement, ReceptionStatementId>
-export type FiniquitoRepository = CloseFlowRepository<FiniquitoStatement, FiniquitoStatementId>
+export type FiniquitoRepository = CloseFlowRepository<FiniquitoStatement, FiniquitoStatementId> & {
+  /** Update linked files/log notes — only while the finiquito is still a draft. */
+  updateAttachments(
+    id: FiniquitoStatementId,
+    input: { fileIds: FileId[]; logNoteIds: LogNoteId[] },
+  ): Promise<FiniquitoStatement>
+}
 
 // --- Schedule --------------------------------------------------------------
 export interface ScheduleRepository {

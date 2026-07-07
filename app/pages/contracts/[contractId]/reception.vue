@@ -72,9 +72,9 @@ const canSign = computed(
     mySlot.value.status === 'pending',
 )
 const canReturn = computed(
-  () => (st.value === 'submitted' || st.value === 'pending_entity') && can('estimate:returnWithNotes'),
+  () => (st.value === 'submitted' || st.value === 'pending_entity') && can('closeFlow:returnWithNotes'),
 )
-const canReject = computed(() => st.value === 'submitted' && can('estimate:reject'))
+const canReject = computed(() => st.value === 'submitted' && can('closeFlow:reject'))
 const canApproveAsEntity = computed(
   () => st.value === 'pending_entity' && can('agreement:approve'),
 )

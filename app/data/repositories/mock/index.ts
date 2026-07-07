@@ -177,6 +177,11 @@ function loadDb<T extends object>(fallback: T): T {
         if (e.status === 'with_notes') e.status = 'rejected'
       }
     }
+    if (Array.isArray((parsed as { finiquito?: unknown }).finiquito)) {
+      for (const f of (parsed as { finiquito: { linkedLogNoteIds?: unknown }[] }).finiquito) {
+        if (!Array.isArray(f.linkedLogNoteIds)) f.linkedLogNoteIds = []
+      }
+    }
     return parsed as T
   } catch {
     return fallback
@@ -1264,12 +1269,25 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
           signatures: pendingSignatures(),
           history: [event('created')],
           attachmentFileIds: [],
+          linkedLogNoteIds: [],
           initiatedById: currentUserId,
           createdAt: new Date(),
         }
         db.finiquito.push(entity)
         save()
         return clone(entity)
+      },
+      async updateAttachments(id, input) {
+        await delay()
+        const f = db.finiquito.find((x) => x.id === id)
+        if (!f) throw notFound('Finiquito')
+        if (f.status !== 'draft') {
+          throw new RepositoryError(409, 'Solo se editan los adjuntos mientras el finiquito está en borrador', 'wrong_status')
+        }
+        f.attachmentFileIds = [...input.fileIds]
+        f.linkedLogNoteIds = [...input.logNoteIds]
+        save()
+        return clone(f)
       },
     },
 

@@ -7,6 +7,7 @@ import type {
   ContractId,
   FileId,
   FiniquitoStatementId,
+  LogNoteId,
   Money,
   ReceptionStatementId,
   Signature,
@@ -106,6 +107,8 @@ export interface FiniquitoStatement {
   signatures: Signature[]
   history: WorkflowEvent[]
   attachmentFileIds: FileId[]
+  /** Log notes (bitácora) linked as supporting context — editable while in draft. */
+  linkedLogNoteIds: LogNoteId[]
   initiatedById: UserId // resident
   createdAt: Date
 }

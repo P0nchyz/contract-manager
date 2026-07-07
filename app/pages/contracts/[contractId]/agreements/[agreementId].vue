@@ -73,9 +73,9 @@ const canSign = computed(
     mySlot.value.status === 'pending',
 )
 const canReturn = computed(
-  () => (st.value === 'submitted' || st.value === 'pending_entity') && can('estimate:returnWithNotes'),
+  () => (st.value === 'submitted' || st.value === 'pending_entity') && can('closeFlow:returnWithNotes'),
 )
-const canReject = computed(() => st.value === 'submitted' && can('estimate:reject'))
+const canReject = computed(() => st.value === 'submitted' && can('closeFlow:reject'))
 const canApproveAsEntity = computed(
   () => st.value === 'pending_entity' && can('agreement:approve'),
 )
@@ -237,7 +237,7 @@ function formatBytes(n: number) {
                     </td>
                     <td class="px-3 py-2 text-right tabular-nums text-muted">{{
                       formatMoney(conceptOf(cc.conceptId)?.unitPrice ??
-                        0) }}</td>
+                      0) }}</td>
                     <td class="px-3 py-2 text-right tabular-nums"
                       :class="cc.newUnitPrice != null ? 'font-medium text-success' : 'text-muted'">
                       {{ cc.newUnitPrice != null ? formatMoney(cc.newUnitPrice) : '—' }}

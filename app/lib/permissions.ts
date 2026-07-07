@@ -13,6 +13,8 @@ export type Permission =
   | 'estimate:rejectWithNotes' // resident + supervisor, until they've signed
   | 'estimate:requestPayment'  // superintendent only, on approved estimates
   | 'estimate:pay'             // financial only
+  | 'closeFlow:reject'          // resident — reject an agreement/reception/finiquito
+  | 'closeFlow:returnWithNotes' // supervisor — return an agreement/reception/finiquito with notes
   | 'logNote:create'
   | 'agreement:create'         // resident + superintendent
   | 'agreement:approve'        // entity approves after all sign
@@ -41,7 +43,7 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'estimate:view', 'estimate:rejectWithNotes',
     'logNote:create', 'agreement:create',
     'evidence:upload', 'evidence:create', 'file:upload',
-    'sign', 'financial:view',
+    'sign', 'financial:view', 'closeFlow:reject',
   ],
 
   superintendent: [
@@ -54,7 +56,7 @@ const MATRIX: Record<Role, readonly Permission[]> = {
   supervisor: [
     'estimate:view', 'estimate:rejectWithNotes',
     'logNote:create',
-    'file:upload', 'sign', 'financial:view',
+    'file:upload', 'sign', 'financial:view', 'closeFlow:returnWithNotes',
   ],
 
   financial: ['estimate:view', 'estimate:pay', 'financial:view'],
