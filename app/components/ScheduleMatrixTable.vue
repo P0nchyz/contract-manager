@@ -34,13 +34,13 @@ function plannedFor(conceptId: string, periodIdx0: number): number {
   <div class="overflow-x-auto rounded-lg border border-default">
     <table class="border-collapse text-sm">
       <thead>
-        <tr class="bg-elevated/60 text-xs text-muted">
+        <tr class="bg-elevated text-xs text-muted">
           <th
-            class="sticky left-0 z-20 w-72 min-w-[18rem] border-r border-default bg-elevated/60 px-4 py-2.5 text-left font-medium">
+            class="sticky left-0 z-20 w-72 min-w-[18rem] border-r border-default bg-elevated px-4 py-2.5 text-left font-medium">
             {{ SM.concept }}
           </th>
           <th
-            class="sticky left-72 z-20 w-36 min-w-[9rem] border-r-2 border-default bg-elevated/60 px-4 py-2.5 text-right font-medium">
+            class="sticky left-72 z-20 w-36 min-w-[9rem] border-r-2 border-default bg-elevated px-4 py-2.5 text-right font-medium">
             {{ SM.totalContracted }}
           </th>
           <th v-for="(p, pi) in periods" :key="pi"
@@ -53,7 +53,7 @@ function plannedFor(conceptId: string, periodIdx0: number): number {
         <template v-for="(group, gi) in groups" :key="group.section?.id ?? `none-${gi}`">
           <!-- Section header row -->
           <tr class="border-t-2 border-default">
-            <td class="sticky left-0 z-10 border-r border-default bg-elevated/30 px-4 py-2" colspan="2">
+            <td class="sticky left-0 z-10 border-r border-default bg-elevated px-4 py-2" colspan="2">
               <div class="flex items-center gap-2">
                 <span v-if="group.section" class="font-mono text-xs font-semibold text-muted">
                   {{ group.section.specificationNumber }}
@@ -63,18 +63,19 @@ function plannedFor(conceptId: string, periodIdx0: number): number {
                 </span>
               </div>
             </td>
-            <td class="bg-elevated/30" :colspan="periods.length" />
+            <td class="bg-elevated" :colspan="periods.length" />
           </tr>
 
           <!-- Concept rows -->
-          <tr v-for="c in group.concepts" :key="c.id" class="border-t border-default/60 hover:bg-elevated/30">
-            <td class="sticky left-0 z-10 w-72 min-w-[18rem] border-r border-default bg-default px-4 py-2.5">
+          <tr v-for="c in group.concepts" :key="c.id" class="group border-t border-default/60 hover:bg-elevated/30">
+            <td
+              class="sticky left-0 z-10 w-72 min-w-[18rem] border-r border-default bg-default px-4 py-2.5 group-hover:bg-elevated">
               <div class="font-mono text-xs text-muted">{{ c.specificationNumber }}</div>
               <div class="text-highlighted">{{ c.description }}</div>
               <div class="text-xs text-muted">{{ c.unit }}</div>
             </td>
             <td
-              class="sticky left-72 z-10 w-36 min-w-[9rem] border-r-2 border-default bg-default px-4 py-2.5 text-right font-medium tabular-nums text-highlighted">
+              class="sticky left-72 z-10 w-36 min-w-[9rem] border-r-2 border-default bg-default px-4 py-2.5 text-right font-medium tabular-nums text-highlighted group-hover:bg-elevated">
               {{ formatNumber(c.contractedQuantity) }}
             </td>
             <td v-for="(p, pi) in periods" :key="pi" class="px-3 py-2.5 text-right tabular-nums"
