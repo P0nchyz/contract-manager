@@ -94,11 +94,11 @@ export const conceptSections: ConceptSection[] = [
 ]
 
 export const concepts: Concept[] = [
-  { id: 'CN-01', contractId: 'CT-001', sectionId: 'CS-01' as ConceptSection['id'], specificationNumber: 'E-101', description: 'Levantamiento topográfico con estación total', unit: 'ha', unitPrice: 1_850_000, contractedQuantity: 40 },
-  { id: 'CN-02', contractId: 'CT-001', sectionId: 'CS-02' as ConceptSection['id'], specificationNumber: 'E-205', description: 'Modelado BIM de estructura principal', unit: 'm2', unitPrice: 95_000, contractedQuantity: 12_000 },
-  { id: 'CN-03', contractId: 'CT-001', sectionId: 'CS-02' as ConceptSection['id'], specificationNumber: 'E-210', description: 'Modelado BIM de instalaciones MEP', unit: 'm2', unitPrice: 120_000, contractedQuantity: 12_000 },
-  { id: 'CN-04', contractId: 'CT-001', sectionId: 'CS-02' as ConceptSection['id'], specificationNumber: 'E-330', description: 'Detección de interferencias (clash detection)', unit: 'lote', unitPrice: 48_000_000, contractedQuantity: 1 },
-  { id: 'CN-05', contractId: 'CT-001', sectionId: 'CS-03' as ConceptSection['id'], specificationNumber: 'E-410', description: 'Capacitación al personal en plataforma', unit: 'curso', unitPrice: 9_500_000, contractedQuantity: 6 },
+  { id: 'CN-01', contractId: 'CT-001', sectionId: 'CS-01' as ConceptSection['id'], specificationNumber: 'E-101', description: 'Levantamiento topográfico con estación total', unit: 'ha', unitPrice: 1_850_000, contractedQuantity: 40, isExtra: false, extendsConceptId: null, originAgreementId: null },
+  { id: 'CN-02', contractId: 'CT-001', sectionId: 'CS-02' as ConceptSection['id'], specificationNumber: 'E-205', description: 'Modelado BIM de estructura principal', unit: 'm2', unitPrice: 95_000, contractedQuantity: 12_000, isExtra: false, extendsConceptId: null, originAgreementId: null },
+  { id: 'CN-03', contractId: 'CT-001', sectionId: 'CS-02' as ConceptSection['id'], specificationNumber: 'E-210', description: 'Modelado BIM de instalaciones MEP', unit: 'm2', unitPrice: 120_000, contractedQuantity: 12_000, isExtra: false, extendsConceptId: null, originAgreementId: null },
+  { id: 'CN-04', contractId: 'CT-001', sectionId: 'CS-02' as ConceptSection['id'], specificationNumber: 'E-330', description: 'Detección de interferencias (clash detection)', unit: 'lote', unitPrice: 48_000_000, contractedQuantity: 1, isExtra: false, extendsConceptId: null, originAgreementId: null },
+  { id: 'CN-05', contractId: 'CT-001', sectionId: 'CS-03' as ConceptSection['id'], specificationNumber: 'E-410', description: 'Capacitación al personal en plataforma', unit: 'curso', unitPrice: 9_500_000, contractedQuantity: 6, isExtra: false, extendsConceptId: null, originAgreementId: null },
 ]
 
 // --- Estimates -------------------------------------------------------------
@@ -108,6 +108,7 @@ export const estimates: Estimate[] = [
     contractId: 'CT-001',
     number: 1,
     periodIndex: 1,
+    kind: 'normal',
     status: 'paid',
     periodStart: d('2024-01-15'),
     periodEnd: d('2024-01-31'),
@@ -187,6 +188,7 @@ export const estimates: Estimate[] = [
     contractId: 'CT-001',
     number: 2,
     periodIndex: 2,
+    kind: 'normal',
     status: 'rejected',
     periodStart: d('2024-02-01'),
     periodEnd: d('2024-02-29'),
@@ -336,7 +338,7 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
 
 // --- Modification agreements ----------------------------------------------
 export const agreements: ModificationAgreement[] = [
-  { id: 'AG-001', contractId: 'CT-001', number: 1, kind: 'amount', description: 'Ampliación de alcance: 2,000 m2 adicionales de modelado MEP.', conceptChanges: [], newConcepts: [], newSections: [], newContractStartDate: null, newContractEndDate: null, amountDelta: 240_000_000, timeDeltaDays: null, status: 'approved', signatures: [
+  { id: 'AG-001', contractId: 'CT-001', number: 1, kind: 'amount', description: 'Ampliación de alcance: 2,000 m2 adicionales de modelado MEP.', conceptChanges: [], newConcepts: [], newSections: [], scheduleMoves: [], newContractStartDate: null, newContractEndDate: null, amountDelta: 240_000_000, timeDeltaDays: null, status: 'approved', signatures: [
     { id: 'AS-1', role: 'superintendent', userId: 'U-SUP', signedAt: d('2024-03-15'), status: 'signed' },
     { id: 'AS-2', role: 'supervisor', userId: 'U-SVR', signedAt: d('2024-03-16'), status: 'signed' },
     { id: 'AS-3', role: 'resident', userId: 'U-RES', signedAt: d('2024-03-17'), status: 'signed' },

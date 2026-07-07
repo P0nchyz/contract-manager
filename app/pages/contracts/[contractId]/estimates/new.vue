@@ -38,13 +38,11 @@ const { data, status, error, refresh } = await useAsyncData(
       editId.value ? repos.estimates.getById(editId.value).catch(() => null) : Promise.resolve(null),
     ])
     const periods = buildPeriods(new Date(contract.startDate), new Date(contract.endDate), contract.estimatePeriodicity ?? 'monthly')
-    // A period "needs a new estimate" if it has none at all yet, or every
-    // estimate it has is rejected (needs a redo). Periods with a draft,
-    // submitted, approved, or paid estimate don't need a new one created.
-    // You can only ever create fresh for the OLDEST period that needs one —
-    // this also naturally covers "redo a rejected period" without a special case.
+    // A period "needs a new NORMAL estimate" if it has none at all yet, or
+    // every one it has is rejected (needs a redo). Additional estimates don't
+    // participate in this sequential rule at all.
     function periodNeedsNewEstimate(p: number): boolean {
-      const forP = estimates.filter((e) => e.periodIndex === p)
+      const forP = estimates.filter((e) => e.periodIndex === p && e.kind === 'normal')
       return forP.length === 0 || forP.every((e) => e.status === 'rejected')
     }
     let oldestOpenPeriod: number | null = null
@@ -52,11 +50,40 @@ const { data, status, error, refresh } = await useAsyncData(
       if (periodNeedsNewEstimate(p)) { oldestOpenPeriod = p; break }
     }
     const scheduleEntries = schedule?.entries ?? []
-    return { contract, concepts, sections, scheduleEntries, periods, oldestOpenPeriod, folders, files, notes, editing }
+    return { contract, concepts, sections, scheduleEntries, periods, oldestOpenPeriod, estimates, folders, files, notes, editing }
   },
 )
 
 const contract = computed(() => data.value?.contract ?? null)
+
+// ─── Estimate kind (normal vs additional) ────────────────────────────────────
+// Additional estimates only ever cover extra (isExtra) concepts, and are only
+// offered for periods that actually have one scheduled — a period can have
+// both a normal and an additional estimate at once.
+function periodHasExtraScheduled(periodIdx1: number): boolean {
+  if (!data.value) return false
+  const periodIdx0 = periodIdx1 - 1
+  const extraIds = new Set(data.value.concepts.filter((c) => c.isExtra).map((c) => String(c.id)))
+  return data.value.scheduleEntries.some(
+    (se) => extraIds.has(String(se.conceptId)) && se.periodIndex === periodIdx0 && se.plannedQuantity > 0,
+  )
+}
+function additionalAlreadyDone(periodIdx1: number): boolean {
+  if (!data.value) return false
+  return data.value.estimates.some(
+    (e) => e.periodIndex === periodIdx1 && e.kind === 'additional' && (e.status === 'approved' || e.status === 'paid'),
+  )
+}
+const canUseAdditionalKind = computed(() => {
+  if (!data.value) return false
+  for (let p = 1; p <= data.value.periods.length; p++) {
+    if (periodHasExtraScheduled(p) && !additionalAlreadyDone(p)) return true
+  }
+  return false
+})
+const estimateKind = ref<'normal' | 'additional'>(data.value?.editing?.kind ?? 'normal')
+// Changing kind invalidates whatever period was selected under the other kind
+watch(estimateKind, () => { if (!editId.value) selectedPeriodIndex.value = undefined })
 
 // ─── Wizard state ─────────────────────────────────────────────────────────────
 const step = ref<1 | 2 | 3>(1)
@@ -71,6 +98,17 @@ watch(currentEstimate, (e) => { if (e && step.value === 1) step.value = 2 }, { i
 // ─── Period options ───────────────────────────────────────────────────────────
 const periodOptions = computed(() => {
   if (!data.value) return []
+  if (estimateKind.value === 'additional') {
+    return data.value.periods.map((p, i) => {
+      const periodIdx1 = i + 1
+      const eligible = periodHasExtraScheduled(periodIdx1) && !additionalAlreadyDone(periodIdx1)
+      return {
+        label: `Período ${periodIdx1} — ${formatDate(p.start)} a ${formatDate(p.end)}`,
+        value: periodIdx1,
+        disabled: !eligible && periodIdx1 !== presetPeriod.value,
+      }
+    })
+  }
   return data.value.periods.map((p, i) => ({
     label: `Período ${i + 1} — ${formatDate(p.start)} a ${formatDate(p.end)}`,
     value: i + 1,
@@ -91,7 +129,10 @@ const conceptsForPeriod = computed(() => {
       .filter((en) => en.periodIndex === periodIdx0 && en.plannedQuantity > 0)
       .map((en) => String(en.conceptId)),
   )
-  return data.value.concepts.filter((c) => scheduledIds.has(String(c.id)) && c.sectionId)
+  return data.value.concepts.filter(
+    (c) => scheduledIds.has(String(c.id)) && c.sectionId &&
+      (estimateKind.value === 'additional' ? c.isExtra : !c.isExtra),
+  )
 })
 
 // ─── Hojas working state ──────────────────────────────────────────────────────
@@ -348,6 +389,7 @@ async function ensureDraft(): Promise<Estimate> {
   const created = await repos.estimates.create({
     contractId: contractId.value,
     periodIndex: selectedPeriodIndex.value!,
+    kind: estimateKind.value,
   })
   currentEstimate.value = created
   return created
@@ -441,6 +483,13 @@ const reviewEstimate = computed(() => currentEstimate.value)
               <div class="font-medium">{{ F.period.title }}</div>
             </template>
             <div class="space-y-4 max-w-lg">
+              <UFormField v-if="canUseAdditionalKind" :label="F.kind.label">
+                <URadioGroup v-model="estimateKind" :items="[
+                  { label: F.kind.normal, value: 'normal' },
+                  { label: F.kind.additional, value: 'additional' },
+                ]" orientation="horizontal" />
+                <p class="mt-1 text-xs text-muted">{{ F.kind.hint }}</p>
+              </UFormField>
               <UFormField :label="F.period.selector">
                 <USelect v-model="selectedPeriodIndex" :items="periodOptions" :placeholder="F.period.selector"
                   class="w-full" />

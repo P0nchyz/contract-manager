@@ -64,6 +64,7 @@ const mySlot = computed(() =>
 const canEdit = computed(
   () => can('agreement:create') && (st.value === 'draft' || st.value === 'with_notes'),
 )
+const canDelete = computed(() => can('agreement:create') && st.value === 'draft')
 const canSubmit = computed(() => st.value === 'draft' && can('agreement:create'))
 const canSign = computed(
   () =>
@@ -80,7 +81,7 @@ const canApproveAsEntity = computed(
   () => st.value === 'pending_entity' && can('agreement:approve'),
 )
 const showReview = computed(() => canReturn.value || canReject.value)
-const hasBarAction = computed(() => canEdit.value || canSubmit.value || canSign.value || canApproveAsEntity.value)
+const hasBarAction = computed(() => canDelete.value || canEdit.value || canSubmit.value || canSign.value || canApproveAsEntity.value)
 
 const latestNote = computed(() => {
   const ag = agreement.value
@@ -112,6 +113,19 @@ async function run(fn: () => Promise<unknown>) {
 const submit = () => run(() => repos.agreements.submit(agreementId.value))
 const sign = () => run(() => repos.agreements.sign(agreementId.value))
 const approveAsEntity = () => run(() => repos.agreements.approve(agreementId.value))
+
+async function deleteAgreement() {
+  if (!confirm('¿Eliminar este borrador de convenio? Esta acción no se puede deshacer.')) return
+  busy.value = true
+  actionError.value = null
+  try {
+    await repos.agreements.delete(agreementId.value)
+    await navigateTo(`/contracts/${contractId.value}/contract`)
+  } catch (e) {
+    actionError.value = isRepositoryError(e) ? e.message : S.common.error
+    busy.value = false
+  }
+}
 
 const reviewNote = ref('')
 const reviewError = ref<string | null>(null)
@@ -202,24 +216,20 @@ function formatBytes(n: number) {
             </div>
           </dl>
 
-          <!-- Concept changes -->
+          <!-- Concept changes (reductions) -->
           <div v-if="agreement.conceptChanges?.length" class="mt-5">
             <div class="mb-2 text-sm font-medium text-default">{{ AG.conceptChanges.title }}</div>
             <div class="overflow-x-auto rounded-lg border border-default">
-              <table class="w-full min-w-[40rem] text-sm">
+              <table class="w-full min-w-[36rem] text-sm">
                 <thead class="border-b border-default bg-elevated/50 text-xs text-muted">
                   <tr>
                     <th class="px-3 py-2 text-left font-medium">{{ AG.conceptChanges.columns.specification }}</th>
                     <th class="px-3 py-2 text-left font-medium">{{ AG.conceptChanges.columns.description }}</th>
                     <th class="px-3 py-2 text-right font-medium">{{ AG.conceptChanges.columns.currentQty }}</th>
-                    <th class="px-3 py-2 text-right font-medium text-success">{{ AG.conceptChanges.columns.newQty }}
+                    <th class="px-3 py-2 text-right font-medium text-warning">{{ AG.conceptChanges.columns.newQty }}
                     </th>
                     <th class="px-3 py-2 text-right font-medium">{{ AG.conceptChanges.columns.currentPrice }}</th>
-                    <th class="px-3 py-2 text-right font-medium text-success">{{ AG.conceptChanges.columns.newPrice }}
-                    </th>
-                    <th class="px-3 py-2 text-center font-medium text-success">{{ AG.conceptChanges.columns.newStart }}
-                    </th>
-                    <th class="px-3 py-2 text-center font-medium text-success">{{ AG.conceptChanges.columns.newEnd }}
+                    <th class="px-3 py-2 text-right font-medium text-warning">{{ AG.conceptChanges.columns.newPrice }}
                     </th>
                   </tr>
                 </thead>
@@ -232,14 +242,14 @@ function formatBytes(n: number) {
                     <td class="px-3 py-2 text-right tabular-nums text-muted">{{
                       formatNumber(conceptOf(cc.conceptId)?.contractedQuantity ?? 0) }}</td>
                     <td class="px-3 py-2 text-right tabular-nums"
-                      :class="cc.newQuantity != null ? 'font-medium text-success' : 'text-muted'">
+                      :class="cc.newQuantity != null ? 'font-medium text-warning' : 'text-muted'">
                       {{ cc.newQuantity != null ? formatNumber(cc.newQuantity) : '—' }}
                     </td>
                     <td class="px-3 py-2 text-right tabular-nums text-muted">{{
                       formatMoney(conceptOf(cc.conceptId)?.unitPrice ??
                       0) }}</td>
                     <td class="px-3 py-2 text-right tabular-nums"
-                      :class="cc.newUnitPrice != null ? 'font-medium text-success' : 'text-muted'">
+                      :class="cc.newUnitPrice != null ? 'font-medium text-warning' : 'text-muted'">
                       {{ cc.newUnitPrice != null ? formatMoney(cc.newUnitPrice) : '—' }}
                     </td>
                   </tr>
@@ -248,7 +258,7 @@ function formatBytes(n: number) {
             </div>
           </div>
 
-          <!-- New concepts -->
+          <!-- Additional concepts (extended or brand new) -->
           <div v-if="agreement.newConcepts?.length" class="mt-5">
             <div class="mb-2 text-sm font-medium text-default">{{ AG.newConcepts.title }}</div>
             <div class="overflow-x-auto rounded-lg border border-default">
@@ -260,18 +270,20 @@ function formatBytes(n: number) {
                     <th class="px-3 py-2 text-left font-medium">{{ AG.newConcepts.columns.unit }}</th>
                     <th class="px-3 py-2 text-right font-medium">{{ AG.newConcepts.columns.qty }}</th>
                     <th class="px-3 py-2 text-right font-medium">{{ AG.newConcepts.columns.unitPrice }}</th>
-
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-default">
                   <tr v-for="nc in (agreement.newConcepts ?? [])" :key="nc.specificationNumber">
                     <td class="px-3 py-2 font-mono text-xs text-highlighted">{{ nc.specificationNumber }}</td>
-                    <td class="min-w-[10rem] px-3 py-2 text-highlighted">{{ nc.description }}</td>
+                    <td class="min-w-[10rem] px-3 py-2 text-highlighted">
+                      {{ nc.description }}
+                      <UBadge v-if="nc.extendsConceptId" :label="AG.newConcepts.modeExtend" color="warning"
+                        variant="subtle" size="xs" class="ml-1.5" />
+                    </td>
                     <td class="px-3 py-2 text-muted">{{ nc.unit }}</td>
                     <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{
                       formatNumber(nc.contractedQuantity) }}</td>
                     <td class="px-3 py-2 text-right tabular-nums text-highlighted">{{ formatMoney(nc.unitPrice) }}</td>
-
                   </tr>
                 </tbody>
               </table>
@@ -301,17 +313,34 @@ function formatBytes(n: number) {
             </div>
           </div>
 
+          <!-- Schedule moves -->
+          <div v-if="agreement.scheduleMoves?.length" class="mt-5">
+            <div class="mb-2 text-sm font-medium text-default">{{ AG.scheduleMoves.title }}</div>
+            <ul class="divide-y divide-default rounded-lg border border-default">
+              <li v-for="(m, idx) in agreement.scheduleMoves" :key="idx" class="flex items-center gap-3 px-3 py-2.5 text-sm">
+                <UIcon name="i-lucide-arrow-right-left" class="size-4 shrink-0 text-muted" />
+                <span class="min-w-0 flex-1 truncate">
+                  <span class="font-medium text-highlighted">
+                    {{ conceptOf(m.conceptId)?.specificationNumber }} — {{ conceptOf(m.conceptId)?.description }}
+                  </span>
+                  <span class="text-muted"> — P{{ m.fromPeriodIndex + 1 }} → P{{ m.toPeriodIndex + 1 }}:</span>
+                  <span class="font-medium tabular-nums text-warning"> {{ formatNumber(m.quantity) }}</span>
+                </span>
+              </li>
+            </ul>
+          </div>
+
           <!-- Contract date changes -->
           <div v-if="agreement.newContractStartDate || agreement.newContractEndDate" class="mt-5">
             <div class="mb-2 text-sm font-medium text-default">{{ AG.contractDates.title }}</div>
             <dl class="grid gap-4 sm:grid-cols-2 rounded-lg border border-default p-3">
               <div v-if="agreement.newContractStartDate">
                 <dt class="text-xs text-muted">{{ AG.contractDates.newStart }}</dt>
-                <dd class="font-medium text-success">{{ formatDate(agreement.newContractStartDate) }}</dd>
+                <dd class="font-medium text-warning">{{ formatDate(agreement.newContractStartDate) }}</dd>
               </div>
               <div v-if="agreement.newContractEndDate">
                 <dt class="text-xs text-muted">{{ AG.contractDates.newEnd }}</dt>
-                <dd class="font-medium text-success">{{ formatDate(agreement.newContractEndDate) }}</dd>
+                <dd class="font-medium text-warning">{{ formatDate(agreement.newContractEndDate) }}</dd>
               </div>
             </dl>
           </div>
@@ -420,10 +449,15 @@ function formatBytes(n: number) {
         <!-- Sticky action bar -->
         <div v-if="hasBarAction"
           class="sticky bottom-0 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-default/80 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
-          <UButton v-if="canEdit" color="neutral" variant="outline" icon="i-lucide-pencil" :to="editLink">
-            {{ AG.actions.edit }}
-          </UButton>
-          <div v-else />
+          <div class="flex gap-2">
+            <UButton v-if="canDelete" color="error" variant="ghost" icon="i-lucide-trash-2" :loading="busy"
+              @click="deleteAgreement">
+              {{ S.estimateDetail.actions.deleteDraft }}
+            </UButton>
+            <UButton v-if="canEdit" color="neutral" variant="outline" icon="i-lucide-pencil" :to="editLink">
+              {{ AG.actions.edit }}
+            </UButton>
+          </div>
 
           <div class="flex gap-3">
             <UButton v-if="canSubmit" icon="i-lucide-send" :loading="busy" @click="submit">

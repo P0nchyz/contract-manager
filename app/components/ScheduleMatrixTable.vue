@@ -68,10 +68,12 @@ function plannedFor(conceptId: string, periodIdx0: number): number {
 
           <!-- Concept rows -->
           <tr v-for="c in group.concepts" :key="c.id" class="group border-t border-default/60 hover:bg-elevated/30">
-            <td
-              class="sticky left-0 z-10 w-72 min-w-[18rem] border-r border-default bg-default px-4 py-2.5 group-hover:bg-elevated">
+            <td class="sticky left-0 z-10 w-72 min-w-[18rem] border-r border-default bg-default px-4 py-2.5 group-hover:bg-elevated">
               <div class="font-mono text-xs text-muted">{{ c.specificationNumber }}</div>
-              <div class="text-highlighted">{{ c.description }}</div>
+              <div class="text-highlighted">
+                {{ c.description }}
+                <UBadge v-if="c.isExtra" :label="SM.extraBadge" color="warning" variant="subtle" size="xs" class="ml-1" />
+              </div>
               <div class="text-xs text-muted">{{ c.unit }}</div>
             </td>
             <td

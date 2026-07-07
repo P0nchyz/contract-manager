@@ -41,7 +41,7 @@ import type {
   ConceptSection,
   ConceptSectionId,
 } from '../models'
-import type { ConceptChange, NewConceptDraft, NewSectionDraft } from '../models/agreements'
+import type { AgreementKind, ConceptChange, NewConceptDraft, NewSectionDraft, ScheduleMove } from '../models/agreements'
 
 export interface ListParams {
   page?: number
@@ -161,6 +161,8 @@ export interface CreateEstimateInput {
   contractId: ContractId
   /** 1-based period number. */
   periodIndex: number
+  /** Defaults to 'normal'. 'additional' estimates may only contain extra (isExtra) concepts. */
+  kind?: 'normal' | 'additional'
 }
 
 /** Update a draft estimate's Hojas and/or its whole-estimate photo evidence. */
@@ -215,12 +217,15 @@ export interface LogNoteRepository {
 // --- Modification agreements ----------------------------------------------
 export interface CreateAgreementInput {
   contractId: ContractId
+  kind: AgreementKind // chosen explicitly at the start of the wizard
   description: string
-  // Per-concept changes; deltas are derived from these on save.
+  // Amount-type only:
   conceptChanges: ConceptChange[]
   newConcepts: NewConceptDraft[]
   newSections: NewSectionDraft[]
-  // Direct contract date overrides (applied on approval).
+  // Schedule-type only:
+  scheduleMoves: ScheduleMove[]
+  // Direct contract date overrides (applied on approval). Schedule-type only.
   newContractStartDate: Date | null
   newContractEndDate: Date | null
   // Aggregate deltas — computed by the form, stored on the model.
@@ -233,6 +238,7 @@ export interface AgreementRepository {
   getById(id: AgreementId): Promise<ModificationAgreement>
   create(input: CreateAgreementInput): Promise<ModificationAgreement>
   update(id: AgreementId, patch: Omit<CreateAgreementInput, 'contractId'>): Promise<ModificationAgreement>
+  delete(id: AgreementId): Promise<void> // delete a draft
   submit(id: AgreementId): Promise<ModificationAgreement>
   approve(id: AgreementId): Promise<ModificationAgreement>
   returnWithNotes(id: AgreementId, note: string): Promise<ModificationAgreement>

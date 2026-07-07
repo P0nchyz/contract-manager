@@ -15,11 +15,10 @@ import type {
   WorkflowEvent,
 } from './common'
 
-// Derived from the user's selections, not chosen directly:
-//   time only            -> 'time'   (plazo)
-//   amount only          -> 'amount' (monto)
-//   both amount and time -> 'mixed'  (mixto)
-export type AgreementKind = 'amount' | 'time' | 'mixed'
+// Chosen explicitly by the user at the start of the wizard — no more mixing:
+//   'amount'   (de monto) — add/reduce concepts and their quantities
+//   'schedule' (de plazo) — move not-yet-estimated scheduled quantity between periods
+export type AgreementKind = 'amount' | 'schedule'
 
 /**
  * A new concept to be added to the catalog on approval of this agreement.
@@ -32,11 +31,15 @@ export interface NewConceptDraft {
   unitPrice: Money
   contractedQuantity: number
   sectionId?: ConceptSectionId | null
+  /** Set when this is extra quantity for a concept that already existed, not a brand-new one. */
+  extendsConceptId?: ConceptId | null
 }
 
 /**
- * Per-concept change record inside a modification agreement.
- * All override fields are optional — only the ones present are applied on approval.
+ * Per-concept change record inside a modification agreement. Amount-type only
+ * — used to REDUCE a previously-defined concept's quantity/price. Additions
+ * go through `newConcepts` instead (with `extendsConceptId` set), so extra
+ * quantity is always tracked as its own separate concept row.
  */
 export interface ConceptChange {
   conceptId: ConceptId
@@ -55,22 +58,33 @@ export interface NewSectionDraft {
   order: number
 }
 
+/** Schedule-type move: shifts not-yet-estimated planned quantity for a concept from one period to another. */
+export interface ScheduleMove {
+  conceptId: ConceptId
+  fromPeriodIndex: number // 0-based
+  toPeriodIndex: number   // 0-based — must have no claims on this concept yet
+  quantity: number
+}
+
 export interface ModificationAgreement {
   id: AgreementId
   contractId: ContractId
   number: number
-  kind: AgreementKind // derived: 'amount' | 'time' | 'mixed'
+  kind: AgreementKind // chosen explicitly at creation — 'amount' | 'schedule'
   description: string
-  // Per-concept changes proposed by this agreement.
+  // Per-concept changes proposed by this agreement. Amount-type only.
   conceptChanges: ConceptChange[]
-  // New concepts to be added to the catalog on approval.
+  // New concepts to be added to the catalog on approval. Amount-type only.
   newConcepts: NewConceptDraft[]
-  // New sections to be added to the catalog on approval.
+  // New sections to be added to the catalog on approval. Amount-type only.
   newSections: NewSectionDraft[]
-  // Contract date change (applied on approval).
+  // Schedule-type only: moves of not-yet-estimated quantity between periods.
+  scheduleMoves: ScheduleMove[]
+  // Contract date change (applied on approval). Schedule-type only.
   newContractEndDate: Date | null
   newContractStartDate: Date | null
-  // Aggregate deltas — derived from conceptChanges + newConcepts on save.
+  // Aggregate deltas — derived on save. Amount-type sets amountDelta only;
+  // schedule-type sets timeDeltaDays only (moves never change the total).
   amountDelta: Money | null
   timeDeltaDays: number | null
   status: AgreementStatus

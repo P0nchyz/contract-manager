@@ -1,5 +1,5 @@
 // app/data/models/concept.ts
-import type { ConceptId, ConceptSectionId, ContractId, Money } from './common'
+import type { AgreementId, ConceptId, ConceptSectionId, ContractId, Money } from './common'
 
 /**
  * A single concept in a contract's Concept Catalog (catálogo de conceptos).
@@ -29,4 +29,15 @@ export interface Concept {
   unit: string // e.g. m2, m3, pza, lote
   unitPrice: Money
   contractedQuantity: number // "in project" quantity
+  /**
+   * True for concepts added via an "amount" (de monto) modification agreement
+   * — either a brand-new concept, or the extra quantity for a concept that
+   * already existed originally. Kept separate from the original rather than
+   * merged in, so estimates/schedule/progress can track them distinctly.
+   */
+  isExtra: boolean
+  /** Set when this extra concept represents additional quantity of an existing one. */
+  extendsConceptId: ConceptId | null
+  /** The agreement that introduced this concept, for provenance/display. */
+  originAgreementId: AgreementId | null
 }

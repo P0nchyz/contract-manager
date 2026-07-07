@@ -158,6 +158,8 @@ function openViewer(file: FileAsset) {
             :aria-label="S.common.back" />
         </template>
         <template #right>
+          <UBadge v-if="estimate?.kind === 'additional'" :label="S.estimateForm.kind.additionalBadge" color="warning"
+            variant="subtle" />
           <StatusBadge v-if="estimate" :display="estimateStatusDisplay[estimate.status]" />
         </template>
       </UDashboardNavbar>

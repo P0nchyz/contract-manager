@@ -152,6 +152,13 @@ export interface Estimate {
   number: number
   periodIndex: number   // 1-based
   status: EstimateStatus
+  /**
+   * 'normal' covers the originally-defined + reduced concepts for the period.
+   * 'additional' (estimación adicional) only ever contains extra concepts
+   * (isExtra) — a period can have both a normal and an additional estimate
+   * open at once, since they never compete for the same concepts.
+   */
+  kind: 'normal' | 'additional'
   periodStart: Date
   periodEnd: Date
 

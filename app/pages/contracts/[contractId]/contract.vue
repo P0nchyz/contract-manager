@@ -1,6 +1,7 @@
 <!-- app/pages/contracts/[contractId]/contract.vue -->
 <script setup lang="ts">
 import { S } from '~/constants/strings'
+import { isRepositoryError } from '~/data/errors'
 import { agreementStatusDisplay, contractStatusDisplay, formatNumber } from '~/utils/format'
 import { buildPeriods } from '~/data/calc/schedule'
 import { groupConceptsBySections } from '~/composables/useConceptSections'
@@ -56,6 +57,23 @@ const canInitiateReception = computed(() => can('close:initiate'))
 
 // Latest 3 agreements for the summary card; full list links to an index.
 const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse() ?? [])
+
+// ─── Delete draft agreement ───────────────────────────────────────────────────
+const deletingAgreementId = ref<string | null>(null)
+const deleteAgreementError = ref<string | null>(null)
+async function deleteAgreementDraft(id: string) {
+  if (!confirm('¿Eliminar este borrador de convenio? Esta acción no se puede deshacer.')) return
+  deletingAgreementId.value = id
+  deleteAgreementError.value = null
+  try {
+    await repos.agreements.delete(id)
+    await refresh()
+  } catch (e) {
+    deleteAgreementError.value = isRepositoryError(e) ? e.message : S.common.error
+  } finally {
+    deletingAgreementId.value = null
+  }
+}
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 const tabItems = [
@@ -226,11 +244,19 @@ const totalContracted = computed(() =>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
                       <StatusBadge :display="agreementStatusDisplay[ag.status]" />
+                      <template v-if="ag.status === 'draft' && canCreateAgreement">
+                        <UButton icon="i-lucide-trash-2" color="error" variant="ghost" size="xs"
+                          :loading="deletingAgreementId === ag.id" @click="deleteAgreementDraft(ag.id)" />
+                        <UButton icon="i-lucide-pencil" color="neutral" variant="ghost" size="xs"
+                          :to="`/contracts/${contractId}/agreements/new?edit=${ag.id}`" />
+                      </template>
                       <UButton icon="i-lucide-chevron-right" color="neutral" variant="ghost" size="xs"
                         :to="`/contracts/${contractId}/agreements/${ag.id}`" />
                     </div>
                   </li>
                 </ul>
+                <UAlert v-if="deleteAgreementError" class="mt-2" color="error" variant="soft"
+                  icon="i-lucide-alert-triangle" :title="deleteAgreementError" />
                 <div v-if="data.agreements.length > 3" class="mt-2 text-right">
                   <UButton color="neutral" variant="ghost" size="xs" :to="`/contracts/${contractId}/agreements`">
                     {{ S.contractDashboard.viewAll }}
@@ -358,7 +384,11 @@ const totalContracted = computed(() =>
                         <tr v-for="c in group.concepts" :key="c.id"
                           class="border-t border-default/50 hover:bg-elevated/40 transition-colors">
                           <td class="px-4 py-2.5 pl-8 font-mono text-xs text-highlighted">{{ c.specificationNumber }}</td>
-                          <td class="min-w-[18rem] px-4 py-2.5 text-highlighted">{{ c.description }}</td>
+                          <td class="min-w-[18rem] px-4 py-2.5 text-highlighted">
+                            {{ c.description }}
+                            <UBadge v-if="c.isExtra" :label="C.extraBadge" color="warning" variant="subtle" size="xs"
+                              class="ml-1.5" />
+                          </td>
                           <td class="px-4 py-2.5 text-muted">{{ c.unit }}</td>
                           <td class="px-4 py-2.5 text-right tabular-nums text-highlighted">{{ formatMoney(c.unitPrice) }}
                           </td>

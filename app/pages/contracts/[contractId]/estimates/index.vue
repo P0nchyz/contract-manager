@@ -75,7 +75,11 @@ const columns = [
         :empty-state="{ icon: 'i-lucide-inbox', label: S.contractDashboard.noEstimates }" class="w-full">
         <!-- Slot names use -cell and data is inside row.original -->
         <template #number-cell="{ row }">
-          <span class="font-medium tabular-nums">{{ row.original.number }}</span>
+          <div class="flex items-center gap-1.5">
+            <span class="font-medium tabular-nums">{{ row.original.number }}</span>
+            <UBadge v-if="row.original.kind === 'additional'" :label="S.estimateForm.kind.additionalBadge"
+              color="warning" variant="subtle" size="xs" />
+          </div>
         </template>
 
         <template #period-cell="{ row }">

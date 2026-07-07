@@ -182,6 +182,25 @@ function loadDb<T extends object>(fallback: T): T {
         if (!Array.isArray(f.linkedLogNoteIds)) f.linkedLogNoteIds = []
       }
     }
+    if (Array.isArray((parsed as { concepts?: unknown }).concepts)) {
+      for (const c of (parsed as { concepts: Record<string, unknown>[] }).concepts) {
+        if (typeof c.isExtra !== 'boolean') c.isExtra = false
+        if (c.extendsConceptId === undefined) c.extendsConceptId = null
+        if (c.originAgreementId === undefined) c.originAgreementId = null
+      }
+    }
+    if (Array.isArray((parsed as { estimates?: unknown }).estimates)) {
+      for (const e of (parsed as { estimates: Record<string, unknown>[] }).estimates) {
+        if (e.kind !== 'normal' && e.kind !== 'additional') e.kind = 'normal'
+      }
+    }
+    if (Array.isArray((parsed as { agreements?: unknown }).agreements)) {
+      for (const a of (parsed as { agreements: Record<string, unknown>[] }).agreements) {
+        if (!Array.isArray(a.scheduleMoves)) a.scheduleMoves = []
+        // 'time'/'mixed' predate the explicit amount/schedule choice — best-effort remap
+        if (a.kind === 'time' || a.kind === 'mixed') a.kind = 'amount'
+      }
+    }
     return parsed as T
   } catch {
     return fallback
@@ -328,6 +347,23 @@ export function createMockRepositories(): Repositories {
       .sort((a, b) => a.periodIndex - b.periodIndex)
     for (const f of followers) tryApproveEstimate(f)
   }
+  // Sum of hoja-row quantities for a concept in a period, across estimates
+  // that are actually committed (not draft, not rejected). Used to figure out
+  // how much of a period's planned schedule is still "unclaimed" and movable
+  // via a schedule-type (de plazo) modification agreement.
+  function claimedQuantityForConceptPeriod(contractId: string, conceptId: string, periodIndex0: number): number {
+    let claimed = 0
+    for (const e of db.estimates) {
+      if (e.contractId !== contractId) continue
+      if (e.status === 'draft' || e.status === 'rejected') continue
+      if (e.periodIndex - 1 !== periodIndex0) continue
+      for (const h of e.hojas) {
+        if (String(h.conceptId) !== String(conceptId)) continue
+        claimed += h.rows.reduce((s, r) => s + r.quantity, 0)
+      }
+    }
+    return claimed
+  }
   // If an estimate is rejected, every later period built on top of it is no
   // longer valid either — auto-reject any newer draft/submitted estimates so
   // they must be redone once the earlier period is fixed. Already-rejected
@@ -459,7 +495,10 @@ export function createMockRepositories(): Repositories {
               resolvedSectionId = createdSections.find(s => s.id === ci.sectionId)?.id ?? null
             }
           }
-          return { id: genId('CN'), contractId, ...ci, sectionId: resolvedSectionId }
+          return {
+            id: genId('CN'), contractId, ...ci, sectionId: resolvedSectionId,
+            isExtra: false, extendsConceptId: null, originAgreementId: null,
+          }
         })
         db.concepts.push(...createdConcepts)
         save()
@@ -633,8 +672,12 @@ export function createMockRepositories(): Repositories {
       },
       async create(contractId, input: CreateConceptInput) {
         await delay()
-        const concept: Concept = { id: genId('CN'), contractId, sectionId: input.sectionId ?? null, ...input }
+        const concept: Concept = {
+          id: genId('CN'), contractId, sectionId: input.sectionId ?? null, ...input,
+          isExtra: false, extendsConceptId: null, originAgreementId: null,
+        }
         db.concepts.push(concept)
+        save()
         return clone(concept)
       },
       async createSection(contractId, input: CreateConceptSectionInput) {
@@ -682,8 +725,12 @@ export function createMockRepositories(): Repositories {
         const entity = db.users.find((u) => u.id === contract.entityId)
         const prior = db.estimates.filter((e) => e.contractId === input.contractId)
 
-        // Only APPROVED/paid estimates claim a period. Multiple drafts allowed.
-        const approvedForPeriod = prior.find(
+        const kind = input.kind ?? 'normal'
+        const priorSameKind = prior.filter((e) => e.kind === kind)
+
+        // Only APPROVED/paid estimates of the SAME kind claim a period —
+        // a period can have both a normal and an additional estimate at once.
+        const approvedForPeriod = priorSameKind.find(
           (e) => e.periodIndex === input.periodIndex && (e.status === 'approved' || e.status === 'paid'),
         )
         if (approvedForPeriod) {
@@ -694,15 +741,19 @@ export function createMockRepositories(): Repositories {
         // (no estimate at all, or every one it has is rejected) must get one
         // first. Periods with a draft/submitted/approved/paid estimate don't
         // block — they already have something in progress or resolved.
-        for (let p = 1; p < input.periodIndex; p++) {
-          const forP = prior.filter((e) => e.periodIndex === p)
-          const needsNew = forP.length === 0 || forP.every((e) => e.status === 'rejected')
-          if (needsNew) {
-            throw new RepositoryError(
-              409,
-              `Primero debes crear una estimación para el período ${p}`,
-              'skipped_period',
-            )
+        // Only applies to normal estimates — additional estimates (extra
+        // concepts only) aren't part of the sequential-period rule.
+        if (kind === 'normal') {
+          for (let p = 1; p < input.periodIndex; p++) {
+            const forP = prior.filter((e) => e.periodIndex === p && e.kind === 'normal')
+            const needsNew = forP.length === 0 || forP.every((e) => e.status === 'rejected')
+            if (needsNew) {
+              throw new RepositoryError(
+                409,
+                `Primero debes crear una estimación para el período ${p}`,
+                'skipped_period',
+              )
+            }
           }
         }
 
@@ -729,6 +780,7 @@ export function createMockRepositories(): Repositories {
           contractId: input.contractId,
           number,
           periodIndex: input.periodIndex,
+          kind,
           status: 'draft',
           periodStart: periodDates.start,
           periodEnd: periodDates.end,
@@ -781,6 +833,12 @@ export function createMockRepositories(): Repositories {
           if (!concept) throw notFound(`Concepto ${hi.conceptId}`)
           if (!concept.sectionId) {
             throw new RepositoryError(409, `El concepto ${concept.specificationNumber} no tiene partida asignada`, 'concept_without_section')
+          }
+          if (e.kind === 'additional' && !concept.isExtra) {
+            throw new RepositoryError(409, `El concepto ${concept.specificationNumber} no es un concepto adicional`, 'not_extra_concept')
+          }
+          if (e.kind === 'normal' && concept.isExtra) {
+            throw new RepositoryError(409, `El concepto ${concept.specificationNumber} es adicional; usa una estimación adicional`, 'is_extra_concept')
           }
           const planned = plannedFor(hi.conceptId)
           if (planned <= 0) {
@@ -860,12 +918,20 @@ export function createMockRepositories(): Repositories {
         }
         // Every concept scheduled (planned quantity > 0) for this period must
         // have its own Hoja — even if it ends up registering 0 for the period.
+        // Scoped to this estimate's own kind: a normal estimate only needs
+        // original/reduced concepts covered; an additional estimate only
+        // needs extra concepts covered.
         const hojaConceptIds = new Set(e.hojas.map((h) => String(h.conceptId)))
         const schedule = db.schedules.find((s) => s.contractId === e.contractId)
         const scheduledConceptIds = new Set(
           (schedule?.entries ?? [])
             .filter((se) => se.periodIndex === e.periodIndex - 1 && se.plannedQuantity > 0)
-            .map((se) => String(se.conceptId)),
+            .map((se) => String(se.conceptId))
+            .filter((cid) => {
+              const concept = db.concepts.find((c) => String(c.id) === cid)
+              if (!concept) return false
+              return e.kind === 'additional' ? concept.isExtra : !concept.isExtra
+            }),
         )
         for (const cid of scheduledConceptIds) {
           if (!hojaConceptIds.has(cid)) {
@@ -1099,7 +1165,12 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
     agreements: {
       async listByContract(contractId) {
         await delay()
-        return clone(db.agreements.filter((a) => a.contractId === contractId))
+        const user = currentUser()
+        return clone(
+          db.agreements.filter(
+            (a) => a.contractId === contractId && (a.status !== 'draft' || a.createdById === user.id),
+          ),
+        )
       },
       async getById(id) {
         await delay()
@@ -1113,11 +1184,12 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
           id: genId('AG'),
           contractId: input.contractId,
           number: db.agreements.filter((x) => x.contractId === input.contractId).length + 1,
-          kind: deriveAgreementKind(input.amountDelta, input.timeDeltaDays),
+          kind: input.kind,
           description: input.description,
           conceptChanges: input.conceptChanges ?? [],
           newConcepts: input.newConcepts ?? [],
           newSections: input.newSections ?? [],
+          scheduleMoves: (input.scheduleMoves ?? []).map((m) => ({ ...m })),
           newContractStartDate: input.newContractStartDate ?? null,
           newContractEndDate: input.newContractEndDate ?? null,
           amountDelta: input.amountDelta,
@@ -1142,13 +1214,25 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
           throw new RepositoryError(409, 'Solo se editan convenios en borrador o con notas', 'not_editable')
         }
         Object.assign(a, patch, {
-          kind: deriveAgreementKind(patch.amountDelta, patch.timeDeltaDays),
+          kind: a.kind, // kind is fixed at creation, never changed on edit
           newSections: patch.newSections ?? a.newSections ?? [],
+          scheduleMoves: (patch.scheduleMoves ?? a.scheduleMoves ?? []).map((m) => ({ ...m })),
           newContractStartDate: 'newContractStartDate' in patch ? patch.newContractStartDate : a.newContractStartDate,
           newContractEndDate:   'newContractEndDate'   in patch ? patch.newContractEndDate   : a.newContractEndDate,
           updatedAt: new Date(),
         })
+        save()
         return clone(a)
+      },
+      async delete(id) {
+        await delay()
+        const idx = db.agreements.findIndex((x) => x.id === id)
+        if (idx === -1) throw notFound('Convenio')
+        if (db.agreements[idx]!.status !== 'draft') {
+          throw new RepositoryError(409, 'Solo se eliminan convenios en borrador', 'not_deletable')
+        }
+        db.agreements.splice(idx, 1)
+        save()
       },
       async submit(id) {
         return transition(db.agreements, id, 'Convenio', 'submitted', 'submitted')
@@ -1192,6 +1276,7 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
           if (change.newQuantity != null)  concept.contractedQuantity = change.newQuantity
           if (change.newUnitPrice != null) concept.unitPrice = change.newUnitPrice
         }
+        const createdAgConcepts: Concept[] = []
         for (const draft of a.newConcepts) {
           const conceptFields = {
             specificationNumber: draft.specificationNumber,
@@ -1209,8 +1294,71 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
             contractId: a.contractId,
             sectionId: resolvedSectionId,
             ...conceptFields,
+            isExtra: true,
+            extendsConceptId: draft.extendsConceptId ?? null,
+            originAgreementId: a.id,
           }
           db.concepts.push(newConcept)
+          createdAgConcepts.push(newConcept)
+        }
+        // Apply schedule moves/allocations/reductions. Three shapes share the
+        // same record, distinguished by -1 sentinels:
+        //  - move:      fromPeriodIndex >= 0, toPeriodIndex >= 0 (schedule-type)
+        //  - allocation: fromPeriodIndex === -1 (brand-new schedule for a new/extra concept)
+        //  - reduction:  toPeriodIndex === -1 (pure decrease, concept shrunk — nothing gained elsewhere)
+        // conceptId may also be a "new:N" placeholder referencing a.newConcepts[N],
+        // resolved here now that those concepts actually exist.
+        if (a.scheduleMoves?.length) {
+          const schedule = db.schedules.find((s) => s.contractId === a.contractId)
+          if (schedule) {
+            for (const move of a.scheduleMoves) {
+              const rawConceptId = String(move.conceptId)
+              const newMatch = /^new:(\d+)$/.exec(rawConceptId)
+              const conceptId = newMatch ? createdAgConcepts[Number(newMatch[1])]?.id : move.conceptId
+              if (!conceptId) continue
+
+              if (move.fromPeriodIndex >= 0) {
+                const from = schedule.entries.find(
+                  (e) => String(e.conceptId) === String(conceptId) && e.periodIndex === move.fromPeriodIndex,
+                )
+                const currentPlanned = from?.plannedQuantity ?? 0
+                const claimed = claimedQuantityForConceptPeriod(a.contractId, String(conceptId), move.fromPeriodIndex)
+                const unclaimed = currentPlanned - claimed
+                if (move.quantity > unclaimed) {
+                  throw new RepositoryError(
+                    409,
+                    `Ya no hay suficiente volumen sin reclamar en el período ${move.fromPeriodIndex + 1} para este movimiento`,
+                    'insufficient_unclaimed',
+                  )
+                }
+                if (from) from.plannedQuantity = Math.max(0, from.plannedQuantity - move.quantity)
+              }
+              if (move.toPeriodIndex >= 0) {
+                const targetClaimed = claimedQuantityForConceptPeriod(a.contractId, String(conceptId), move.toPeriodIndex)
+                if (targetClaimed > 0) {
+                  throw new RepositoryError(
+                    409,
+                    `El período destino ${move.toPeriodIndex + 1} ya tiene una estimación para este concepto`,
+                    'target_already_estimated',
+                  )
+                }
+                const to = schedule.entries.find(
+                  (e) => String(e.conceptId) === String(conceptId) && e.periodIndex === move.toPeriodIndex,
+                )
+                if (to) {
+                  to.plannedQuantity += move.quantity
+                } else {
+                  schedule.entries.push({
+                    id: genId('SE') as ConceptScheduleEntry['id'],
+                    contractId: a.contractId,
+                    conceptId,
+                    periodIndex: move.toPeriodIndex,
+                    plannedQuantity: move.quantity,
+                  })
+                }
+              }
+            }
+          }
         }
         // Recalculate contract amount
         const allConcepts = db.concepts.filter(c => c.contractId === a.contractId)
@@ -1575,12 +1723,6 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
 }
 
 // --- helpers outside the closure ------------------------------------------
-function deriveAgreementKind(amountDelta: number | null, timeDeltaDays: number | null) {
-  const hasAmount = amountDelta != null && amountDelta !== 0
-  const hasTime = timeDeltaDays != null && timeDeltaDays !== 0
-  return hasAmount && hasTime ? 'mixed' : hasTime ? 'time' : 'amount'
-}
-
 type CloseEntity = ReceptionStatement | FiniquitoStatement
 function makeCloseFlow<T extends CloseEntity>(
   arr: T[],
