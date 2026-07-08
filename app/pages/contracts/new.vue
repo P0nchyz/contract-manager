@@ -310,11 +310,13 @@ const ganttRows = computed(() =>
 )
 
 // ─── Validation ───────────────────────────────────────────────────────────────
+const todayStr = new Date().toISOString().slice(0, 10)
 const errors = computed(() => ({
   code: !code.value.trim() ? F.validation.codeRequired : null,
   title: !title.value.trim() ? F.validation.titleRequired : null,
   dates: (!startDate.value || !endDate.value) ? F.validation.datesRequired
-    : startDate.value >= endDate.value ? F.validation.endBeforeStart : null,
+    : startDate.value < todayStr ? F.validation.startInPast
+      : startDate.value >= endDate.value ? F.validation.endBeforeStart : null,
   anticipo: (anticipoPct.value === '' || Number(anticipoPct.value) < 0 || Number(anticipoPct.value) > 30) ? F.validation.anticipoRange : null,
   iva: (ivaRate.value === '' || Number(ivaRate.value) < 0 || Number(ivaRate.value) > 100) ? F.validation.ivaRange : null,
   resident: !residentId.value ? F.validation.residentRequired : null,
@@ -490,7 +492,7 @@ const sections = [
               </UFormField>
             </div>
             <UFormField :label="F.fields.startDate" :error="errors.dates || undefined">
-              <UInput v-model="startDate" type="date" class="w-full" />
+              <UInput v-model="startDate" type="date" :min="todayStr" class="w-full" />
             </UFormField>
             <UFormField :label="F.fields.endDate">
               <UInput v-model="endDate" type="date" class="w-full" />
@@ -872,14 +874,14 @@ const sections = [
                     <div class="shrink-0 text-xs text-muted tabular-nums">
                       {{ F.schedule.contracted }}: <span class="font-medium text-highlighted">{{ parseFloat(c._qtyRaw)
                         || 0
-                      }}</span>
+                        }}</span>
                     </div>
                     <div class="shrink-0 text-xs tabular-nums"
                       :class="scheduleErrors[ci] ? 'text-error' : 'text-muted'">
                       {{ F.schedule.scheduledTotal }}:
                       <span class="font-medium">{{ Math.round(conceptTotals[ci] ?? 0) }} / {{ parseFloat(c._qtyRaw) ||
                         0
-                      }}</span>
+                        }}</span>
                     </div>
                     <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost"
                       :aria-label="F.schedule.removeFromPeriod" @click="removeConceptFromPeriod(ci)" />

@@ -40,6 +40,22 @@ export function buildPeriods(
     curStart = new Date(periodEnd)
     curStart.setDate(curStart.getDate() + 1)
   }
+
+  // A trailing period that got cut short by contractEnd (e.g. the contract
+  // ends 2 days into what would've been the next period) is too small to
+  // stand on its own — fold it into the previous period instead of leaving
+  // a near-empty final period nobody can meaningfully estimate against.
+  const daysInclusive = (p: { start: Date; end: Date }) =>
+    Math.round((p.end.getTime() - p.start.getTime()) / 86_400_000) + 1
+  const minPeriodDays = periodicity === 'monthly' ? 5 : 3
+  if (periods.length > 1) {
+    const last = periods[periods.length - 1]!
+    if (daysInclusive(last) < minPeriodDays) {
+      periods[periods.length - 2]!.end = last.end
+      periods.pop()
+    }
+  }
+
   return periods
 }
 
