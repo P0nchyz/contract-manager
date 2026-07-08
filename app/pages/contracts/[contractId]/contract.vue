@@ -69,14 +69,15 @@ const canStartNewAgreement = computed(() => canCreateAgreement.value && !hasUnre
 const canInitiateReception = computed(() => can('close:initiate'))
 
 // ─── Reassign roles (entity only) ──────────────────────────────────────────────
+// The contracted/supervisory corporation is fixed at contract creation and
+// can't be changed here — only which person from that same corporation holds
+// the role.
 const canAssignRoles = computed(() => can('contract:assign'))
 const showReassignModal = ref(false)
 const reassignSaving = ref(false)
 const reassignError = ref<string | null>(null)
 const reassignResidentId = ref<string | null>(null)
-const reassignSuperintendentCorpId = ref<string | null>(null)
 const reassignSuperintendentId = ref<string | null>(null)
-const reassignSupervisorCorpId = ref<string | null>(null)
 const reassignSupervisorId = ref<string | null>(null)
 
 const reassignResidents = computed(() =>
@@ -84,38 +85,23 @@ const reassignResidents = computed(() =>
 )
 const reassignSuperintendents = computed(() =>
   (data.value?.users ?? []).filter(
-    (u) => u.role === 'superintendent' && u.active && u.corporationId === reassignSuperintendentCorpId.value,
+    (u) => u.role === 'superintendent' && u.active && u.corporationId === data.value?.contract.superintendentCorporationId,
   ),
 )
 const reassignSupervisors = computed(() =>
   (data.value?.users ?? []).filter(
-    (u) => u.role === 'supervisor' && u.active && u.corporationId === reassignSupervisorCorpId.value,
+    (u) => u.role === 'supervisor' && u.active && u.corporationId === data.value?.contract.supervisorCorporationId,
   ),
 )
-// Guarded: prefilling the modal sets corp + user together, and a plain watch
-// would otherwise fire after both assignments and null the user pick back out
-// (same corp-change-resets-user pattern as contracts/new.vue, but here it must
-// not run during the programmatic prefill — only on the person's own edits).
-const reassignPrefilling = ref(false)
-watch(reassignSuperintendentCorpId, () => {
-  if (!reassignPrefilling.value) reassignSuperintendentId.value = null
-})
-watch(reassignSupervisorCorpId, () => {
-  if (!reassignPrefilling.value) reassignSupervisorId.value = null
-})
 
 function openReassignModal() {
   const c = data.value?.contract
   if (!c) return
-  reassignPrefilling.value = true
   reassignResidentId.value = c.residentId
-  reassignSuperintendentCorpId.value = c.superintendentCorporationId
   reassignSuperintendentId.value = c.superintendentId
-  reassignSupervisorCorpId.value = c.supervisorCorporationId
   reassignSupervisorId.value = c.supervisorId
   reassignError.value = null
   showReassignModal.value = true
-  nextTick(() => { reassignPrefilling.value = false })
 }
 
 async function saveReassign() {
@@ -126,8 +112,6 @@ async function saveReassign() {
       residentId: reassignResidentId.value,
       superintendentId: reassignSuperintendentId.value,
       supervisorId: reassignSupervisorId.value,
-      superintendentCorporationId: reassignSuperintendentCorpId.value,
-      supervisorCorporationId: reassignSupervisorCorpId.value,
     })
     showReassignModal.value = false
     await refresh()
@@ -577,6 +561,8 @@ const totalContracted = computed(() =>
   <UModal v-model:open="showReassignModal" :title="CI.reassign.title">
     <template #body>
       <div class="space-y-4">
+        <p class="text-sm text-muted">{{ CI.reassign.hint }}</p>
+
         <UFormField :label="CI.reassign.resident">
           <USelect v-model="reassignResidentId"
             :items="reassignResidents.map((u) => ({ label: u.fullName, value: u.id }))"
@@ -584,23 +570,23 @@ const totalContracted = computed(() =>
         </UFormField>
 
         <UFormField :label="CI.reassign.superintendentCorp">
-          <USelect v-model="reassignSuperintendentCorpId"
-            :items="(data?.corporations ?? []).map((c) => ({ label: c.name, value: c.id }))"
-            :placeholder="`— ${CI.reassign.superintendentCorp} —`" class="w-full" />
+          <div class="rounded-md border border-default bg-elevated/30 px-3 py-2 text-sm text-muted">
+            {{ data?.corpName ?? '—' }}
+          </div>
         </UFormField>
         <UFormField :label="CI.reassign.superintendent">
-          <USelect v-model="reassignSuperintendentId" :disabled="!reassignSuperintendentCorpId"
+          <USelect v-model="reassignSuperintendentId"
             :items="reassignSuperintendents.map((u) => ({ label: u.fullName, value: u.id }))"
             :placeholder="`— ${CI.reassign.superintendent} —`" class="w-full" />
         </UFormField>
 
         <UFormField :label="CI.reassign.supervisorCorp">
-          <USelect v-model="reassignSupervisorCorpId"
-            :items="(data?.corporations ?? []).map((c) => ({ label: c.name, value: c.id }))"
-            :placeholder="`— ${CI.reassign.supervisorCorp} —`" class="w-full" />
+          <div class="rounded-md border border-default bg-elevated/30 px-3 py-2 text-sm text-muted">
+            {{ data?.supCorpName ?? '—' }}
+          </div>
         </UFormField>
         <UFormField :label="CI.reassign.supervisor">
-          <USelect v-model="reassignSupervisorId" :disabled="!reassignSupervisorCorpId"
+          <USelect v-model="reassignSupervisorId"
             :items="reassignSupervisors.map((u) => ({ label: u.fullName, value: u.id }))"
             :placeholder="`— ${CI.reassign.supervisor} —`" class="w-full" />
         </UFormField>

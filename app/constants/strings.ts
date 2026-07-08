@@ -414,6 +414,7 @@ export const S = {
     reassign: {
       button: 'Reasignar',
       title: 'Reasignar roles del contrato',
+      hint: 'La empresa contratista y la supervisora quedaron fijadas al crear el contrato. Aquí solo puedes cambiar a la persona que ocupa cada rol.',
       resident: 'Residente',
       superintendentCorp: 'Empresa contratista',
       superintendent: 'Superintendente',

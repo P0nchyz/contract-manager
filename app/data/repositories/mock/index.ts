@@ -618,11 +618,32 @@ export function createMockRepositories(): Repositories {
         const c = db.contracts.find((x) => x.id === id)
         if (!c) throw notFound('Contrato')
         if (c.entityId !== user.id) throw new RepositoryError(403, 'Contrato de otra entidad', 'forbidden')
-        if (patch.residentId !== undefined)                  c.residentId = patch.residentId ?? null
-        if (patch.superintendentId !== undefined)            c.superintendentId = patch.superintendentId ?? null
-        if (patch.supervisorId !== undefined)                c.supervisorId = patch.supervisorId ?? null
-        if (patch.superintendentCorporationId !== undefined) c.superintendentCorporationId = patch.superintendentCorporationId ?? null
-        if (patch.supervisorCorporationId !== undefined)     c.supervisorCorporationId = patch.supervisorCorporationId ?? null
+        // The contracted/supervisory corporation is fixed at contract creation
+        // and can't change via reassignment — only which person from that same
+        // corporation holds the role can change.
+        if (patch.superintendentId) {
+          const su = db.users.find((x) => x.id === patch.superintendentId)
+          if (!su || su.role !== 'superintendent' || su.corporationId !== c.superintendentCorporationId) {
+            throw new RepositoryError(
+              409,
+              'El superintendente debe pertenecer a la empresa contratista ya asignada al contrato',
+              'wrong_corporation',
+            )
+          }
+        }
+        if (patch.supervisorId) {
+          const sv = db.users.find((x) => x.id === patch.supervisorId)
+          if (!sv || sv.role !== 'supervisor' || sv.corporationId !== c.supervisorCorporationId) {
+            throw new RepositoryError(
+              409,
+              'El supervisor debe pertenecer a la empresa supervisora ya asignada al contrato',
+              'wrong_corporation',
+            )
+          }
+        }
+        if (patch.residentId !== undefined) c.residentId = patch.residentId ?? null
+        if (patch.superintendentId !== undefined) c.superintendentId = patch.superintendentId ?? null
+        if (patch.supervisorId !== undefined) c.supervisorId = patch.supervisorId ?? null
         c.updatedAt = new Date()
         save()
         return clone(c)

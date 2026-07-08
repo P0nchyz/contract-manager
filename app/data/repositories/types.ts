@@ -99,8 +99,6 @@ export interface AssignRolesInput {
   residentId?: UserId | null
   superintendentId?: UserId | null
   supervisorId?: UserId | null
-  superintendentCorporationId?: CorporationId | null
-  supervisorCorporationId?: CorporationId | null
 }
 
 export interface ContractRepository {
