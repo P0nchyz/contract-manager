@@ -70,10 +70,13 @@ interface QuickAction {
 }
 const quickActions = computed<QuickAction[]>(() => {
   const base = `/contracts/${contractId.value}`
+  const closed = data.value?.contract.status === 'closed'
   return (
     [
-      { label: S.actions.newLogNote, icon: 'i-lucide-notebook-pen', to: `${base}/logbook/new`, permission: 'logNote:create' },
-      { label: S.actions.uploadEvidence, icon: 'i-lucide-image-plus', to: `${base}/evidence`, permission: 'evidence:upload' },
+      ...(closed ? [] : [
+        { label: S.actions.newLogNote, icon: 'i-lucide-notebook-pen', to: `${base}/logbook/new`, permission: 'logNote:create' as Permission },
+        { label: S.actions.uploadEvidence, icon: 'i-lucide-image-plus', to: `${base}/evidence`, permission: 'evidence:upload' as Permission },
+      ]),
       { label: S.actions.conceptCatalog, icon: 'i-lucide-list', to: `${base}/contract?tab=concepts` },
       { label: S.actions.schedule, icon: 'i-lucide-chart-gantt', to: `${base}/progress` },
       { label: S.actions.files, icon: 'i-lucide-folder', to: `${base}/files` },
@@ -119,7 +122,7 @@ const quickActions = computed<QuickAction[]>(() => {
           <ContractFinancialWidget v-if="data.financials" class="lg:col-span-4" :financials="data.financials" />
           <ContractScheduleWidget class="lg:col-span-8" :points="data.curve" :financials="data.financials"
             :contract-id="contractId" />
-          <ContractLogbookWidget class="lg:col-span-7" :notes="data.recentLogNotes" :contract-id="contractId" />
+          <ContractLogbookWidget v-if="can('logNote:create')" class="lg:col-span-7" :notes="data.recentLogNotes" :contract-id="contractId" />
           <ContractEstimatesWidget class="lg:col-span-5" :estimates="data.recentEstimates" :contract-id="contractId" />
         </div>
       </div>

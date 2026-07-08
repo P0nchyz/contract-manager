@@ -55,7 +55,6 @@ export const contracts: Contract[] = [
     amount: 32_600_000_000, // $326,000,000.00
     anticipoPercentage: 20,
     ivaRate: 16,
-    retentionPercentage: 5,
     estimatePeriodicity: 'monthly' as const,
     startDate: d('2024-01-15'),
     endDate: d('2024-12-31'),
@@ -152,7 +151,6 @@ export const estimates: Estimate[] = [
         anticipoAmortization: 11_100_000,
         amortizationIva: 1_776_000,
         amortizationTotal: 12_876_000,
-        retentions: 1_850_000,
         cincoAlMillarSfp: 185_000,
         total: 28_009_000,
       },
@@ -243,7 +241,6 @@ export const estimates: Estimate[] = [
         anticipoAmortization: 79_500_000,
         amortizationIva: 12_720_000,
         amortizationTotal: 92_220_000,
-        retentions: 13_250_000,
         cincoAlMillarSfp: 1_325_000,
         total: 200_605_000,
       },

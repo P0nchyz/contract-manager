@@ -4,7 +4,7 @@ import { ref, computed } from 'vue'
 import { S } from '~/constants/strings'
 import type { LogNoteCategory } from '~/data/models'
 
-definePageMeta({ requiredPermission: 'estimate:view' })
+definePageMeta({ requiredPermission: 'logNote:create' })
 
 const L = S.logNote
 

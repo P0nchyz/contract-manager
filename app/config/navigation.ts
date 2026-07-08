@@ -35,7 +35,9 @@ export function buildNavigation(opts: {
     const base = `/contracts/${contractId}`
 
     items.push({ label: S.nav.dashboard, icon: 'i-lucide-layout-dashboard', to: base })
-    items.push({ label: S.nav.logbook,   icon: 'i-lucide-notebook-pen',     to: `${base}/logbook` })
+    if (can('logNote:create')) {
+      items.push({ label: S.nav.logbook, icon: 'i-lucide-notebook-pen', to: `${base}/logbook` })
+    }
 
     if (can('estimate:view')) {
       items.push({ label: S.nav.estimates, icon: 'i-lucide-file-spreadsheet', to: `${base}/estimates` })

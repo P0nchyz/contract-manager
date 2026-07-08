@@ -27,7 +27,7 @@ function openFile(id: string) {
 
 const D = S.estimateDoc
 const e = computed(() => props.estimate)
-const calc = computed(() => e.value.summary?.calculations ?? { ivaRate: 0, estimateAmount: 0, estimateIva: 0, estimateTotal: 0, anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, retentions: 0, cincoAlMillarSfp: 0, total: 0 })
+const calc = computed(() => e.value.summary?.calculations ?? { ivaRate: 0, estimateAmount: 0, estimateIva: 0, estimateTotal: 0, anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, cincoAlMillarSfp: 0, total: 0 })
 
 const now = new Date()
 
@@ -145,7 +145,6 @@ const saldoAmortizar = computed(() => anticipoAmt.value - accumAmort.value)
           <tr><td>{{ D.amortizacionAnticipo }}</td><td class="text-right">− {{ formatMoney(calc.anticipoAmortization) }}</td></tr>
           <tr><td>{{ D.ivaAmortizacion }}</td><td class="text-right">− {{ formatMoney(calc.amortizationIva) }}</td></tr>
           <tr class="font-medium"><td>{{ D.totalAmortizacion }}</td><td class="text-right">− {{ formatMoney(calc.amortizationTotal) }}</td></tr>
-          <tr><td>{{ D.retenciones }}</td><td class="text-right">− {{ formatMoney(calc.retentions) }}</td></tr>
           <tr><td>{{ D.cincoAlMillar }}</td><td class="text-right">− {{ formatMoney(calc.cincoAlMillarSfp) }}</td></tr>
           <tr class="border-t-2 border-default text-base font-bold"><td>{{ D.totalNeto }}</td><td class="text-right">{{ formatMoney(calc.total) }}</td></tr>
         </tbody>
@@ -261,7 +260,6 @@ const saldoAmortizar = computed(() => anticipoAmt.value - accumAmort.value)
           <tr><td colspan="2">{{ D.amortizacionAnticipo }}</td><td class="text-right tabular-nums">{{ formatMoney(calc.anticipoAmortization) }}</td></tr>
           <tr><td colspan="2">{{ D.ivaAmortizacion }}</td><td class="text-right tabular-nums">{{ formatMoney(calc.amortizationIva) }}</td></tr>
           <tr class="font-medium"><td colspan="2">{{ D.totalAmortizacion }}</td><td class="text-right tabular-nums">{{ formatMoney(calc.amortizationTotal) }}</td></tr>
-          <tr><td colspan="2">{{ D.retenciones }}</td><td class="text-right tabular-nums">{{ formatMoney(calc.retentions) }}</td></tr>
           <tr><td colspan="2">{{ D.cincoAlMillar }}</td><td class="text-right tabular-nums">{{ formatMoney(calc.cincoAlMillarSfp) }}</td></tr>
           <tr class="border-t-2 border-default text-base font-bold"><td colspan="2">{{ D.total }}</td><td class="text-right tabular-nums">{{ formatMoney(calc.total) }}</td></tr>
         </tbody>

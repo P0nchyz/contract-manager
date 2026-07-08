@@ -32,7 +32,6 @@ const MATRIX: Record<Role, readonly Permission[]> = {
   entity: [
     'contract:create', 'contract:manage', 'contract:assign',
     'estimate:view',      // needs to see all contract pages
-    'logNote:create',
     'agreement:approve',
     'evidence:upload', 'evidence:create', 'file:upload',
     'close:initiate', 'financial:view',

@@ -95,6 +95,7 @@ export const S = {
     balance: 'Balance',
     anticipo: 'Anticipo',
     overSchedule: 'Avance vs programa',
+    estimatesLockedByClosing: 'No se pueden crear nuevas estimaciones: el proceso de recepción/cierre del contrato ya comenzó.',
     programmed: 'Programado',
     actual: 'Real',
     physical: 'Físico',
@@ -230,6 +231,7 @@ export const S = {
       logNoteRequired: 'Cada renglón con volumen registrado requiere al menos una nota de bitácora vinculada para poder enviar.',
       missingScheduledConcepts: 'Falta agregar la Hoja de uno o más conceptos programados para este período (puedes registrar 0 si no se ejecutaron).',
       exceedsSchedule: 'Hay Hojas que superan el volumen programado para este periodo.',
+      qtyInteger: 'Las cantidades registradas deben ser números enteros (sin decimales).',
     },
   },
   estimateDoc: {
@@ -267,7 +269,6 @@ export const S = {
     amortizacionAnticipo: 'Amortización Anticipo',
     ivaAmortizacion: 'IVA Amortización Anticipo',
     totalAmortizacion: 'Total Amortización',
-    retenciones: 'Retenciones',
     cincoAlMillar: '5 al Millar SFP (.5%)',
     totalNeto: 'Total Neto al Pagar',
     evidenceTitle: 'Evidencia Fotográfica de la Estimación',
@@ -384,6 +385,10 @@ export const S = {
       documents: 'Documentos del contrato',
       agreements: 'Convenios modificatorios',
       closing: 'Cierre del contrato',
+    },
+    readOnly: {
+      title: 'Contrato finalizado',
+      description: 'El finiquito fue aprobado. Este contrato es de solo lectura: no se pueden crear estimaciones, convenios, notas de bitácora, evidencia ni archivos nuevos.',
     },
     documents: {
       empty: 'No se cargaron documentos al crear el contrato.',
@@ -502,6 +507,7 @@ export const S = {
       },
       validation: {
         mustReduce: 'El nuevo volumen debe ser menor al actual (usa "Conceptos adicionales" para aumentar).',
+        qtyInteger: 'El volumen debe ser un número entero (sin decimales).',
       },
       scheduleReduction: {
         title: 'Períodos de los que se reduce',
@@ -533,6 +539,7 @@ export const S = {
         descRequired: 'Descripción requerida',
         unitRequired: 'Unidad requerida',
         qtyRequired: 'Vol. debe ser mayor a 0',
+        qtyInteger: 'El volumen debe ser un número entero (sin decimales).',
         priceRequired: 'P.U. debe ser mayor a 0',
         extendConceptRequired: 'Selecciona el concepto a extender',
       },
@@ -617,6 +624,15 @@ export const S = {
     banner: { withNotes: 'Devuelta con notas', rejected: 'Rechazada' },
     linkedLogNote: 'Nota de bitácora vinculada',
     sections: { signatures: 'Firmas', history: 'Historial' },
+    concepts: {
+      title: 'Conceptos ejecutados',
+      done: 'Completo',
+      missing: 'Falta volumen',
+      missingBadge: 'con volumen pendiente',
+      allDone: 'Todos completos',
+      empty: 'Este contrato no tiene conceptos.',
+      noEvidence: 'Sin evidencia adjunta.',
+    },
   },
   finiquito: {
     title: 'Finiquito',
@@ -677,7 +693,7 @@ export const S = {
     title: 'Nuevo contrato',
     sections: {
       general: 'Datos generales',
-      rates: 'Tasas y retenciones',
+      rates: 'Tasas y periodicidad',
       parties: 'Partes del contrato',
       concepts: 'Catálogo de conceptos',
       schedule: 'Programa de obra',
@@ -692,7 +708,6 @@ export const S = {
       anticipoPercentage: 'Anticipo (%)',
       anticipoMax: 'Máximo 30%',
       ivaRate: 'IVA (%)',
-      retentionPercentage: 'Retenciones / fondo de garantía (%)',
       cincoAlMillar: '5 al millar SFP (%)',
       cincoAlMillarFixed: '0.5% (fijo por norma)',
       estimatePeriodicity: 'Periodicidad de estimaciones',
@@ -729,6 +744,7 @@ export const S = {
         descRequired: 'Descripción requerida',
         unitRequired: 'Unidad requerida',
         qtyPositive: 'Volumen debe ser > 0',
+        qtyInteger: 'El volumen debe ser un número entero (sin decimales)',
         pricePositive: 'P.U. debe ser > 0',
       },
     },
@@ -746,6 +762,7 @@ export const S = {
       overallTotals: 'Totales programados por concepto (todos los periodos)',
       validation: {
         sumMismatch: 'La suma no coincide con el volumen contratado',
+        qtyInteger: 'Las cantidades del programa deben ser números enteros (sin decimales)',
         allZero: 'Captura al menos un volumen en el programa',
       },
       allClear: 'El programa está completo. Todos los volúmenes cuadran.',
@@ -757,7 +774,6 @@ export const S = {
       endBeforeStart: 'La fecha de término debe ser posterior al inicio.',
       anticipoRange: 'El anticipo debe estar entre 0% y 30%.',
       ivaRange: 'El IVA debe estar entre 0% y 100%.',
-      retentionRange: 'La retención debe estar entre 0% y 100%.',
       residentRequired:       'Selecciona un residente.',
       superintendentRequired: 'Selecciona un superintendente.',
       supervisorRequired:     'Selecciona un supervisor.',

@@ -4,7 +4,7 @@ import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
 import type { UserId } from '~/data/models'
 
-definePageMeta({ requiredPermission: 'estimate:view' })
+definePageMeta({ requiredPermission: 'logNote:create' })
 
 const L = S.logNote
 

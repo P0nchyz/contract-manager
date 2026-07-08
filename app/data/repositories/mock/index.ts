@@ -130,7 +130,7 @@ function loadDb<T extends object>(fallback: T): T {
     }
     // Migrate old estimate shape: ensure hojas/summary/sectionNotes exist
     if (Array.isArray(parsed.estimates)) {
-      const emptyCalc = { ivaRate: 16, estimateAmount: 0, estimateIva: 0, estimateTotal: 0, anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, retentions: 0, cincoAlMillarSfp: 0, total: 0 }
+      const emptyCalc = { ivaRate: 16, estimateAmount: 0, estimateIva: 0, estimateTotal: 0, anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, cincoAlMillarSfp: 0, total: 0 }
       for (const e of parsed.estimates as Record<string, unknown>[]) {
         if (!e.hojas) e.hojas = []
         if (!e.lineItems) e.lineItems = []
@@ -160,7 +160,7 @@ function loadDb<T extends object>(fallback: T): T {
           if (cov.contractorRfc === undefined) cov.contractorRfc = null
         }
         if (!e.summary || typeof e.summary !== 'object') {
-          e.summary = { partidas: [], partidasSubtotal: 0, calculations: { ivaRate: 16, estimateAmount: 0, estimateIva: 0, estimateTotal: 0, anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, retentions: 0, cincoAlMillarSfp: 0, total: 0 } }
+          e.summary = { partidas: [], partidasSubtotal: 0, calculations: { ivaRate: 16, estimateAmount: 0, estimateIva: 0, estimateTotal: 0, anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, cincoAlMillarSfp: 0, total: 0 } }
         } else {
           const sum = e.summary as Record<string, unknown>
           if (!Array.isArray(sum.partidas)) sum.partidas = []
@@ -351,6 +351,33 @@ export function createMockRepositories(): Repositories {
   // that are actually committed (not draft, not rejected). Used to figure out
   // how much of a period's planned schedule is still "unclaimed" and movable
   // via a schedule-type (de plazo) modification agreement.
+  // Quantities (contracted volumes) are whole units only — no decimals,
+  // anywhere a concept quantity is entered.
+  function assertIntegerAgreementQuantities(input: {
+    conceptChanges?: { newQuantity?: number | null }[]
+    newConcepts?: { contractedQuantity?: number }[]
+    scheduleMoves?: { quantity: number }[]
+  }): void {
+    if ((input.conceptChanges ?? []).some((cc) => cc.newQuantity != null && !Number.isInteger(cc.newQuantity))) {
+      throw new RepositoryError(422, 'El volumen de cada concepto debe ser un número entero', 'non_integer_quantity')
+    }
+    if ((input.newConcepts ?? []).some((nc) => !Number.isInteger(nc.contractedQuantity ?? 0))) {
+      throw new RepositoryError(422, 'El volumen de cada concepto debe ser un número entero', 'non_integer_quantity')
+    }
+    if ((input.scheduleMoves ?? []).some((m) => !Number.isInteger(m.quantity))) {
+      throw new RepositoryError(422, 'Las cantidades del programa deben ser números enteros', 'non_integer_quantity')
+    }
+  }
+
+  // Once a contract is 'closed' (finiquito finalized), it becomes view-only —
+  // no new log notes, evidence, files, or agreements.
+  function assertContractOpen(contractId: string): void {
+    const c = db.contracts.find((x: Contract) => x.id === contractId)
+    if (c?.status === 'closed') {
+      throw new RepositoryError(409, 'Este contrato está finalizado y es de solo lectura', 'contract_closed')
+    }
+  }
+
   function claimedQuantityForConceptPeriod(contractId: string, conceptId: string, periodIndex0: number): number {
     let claimed = 0
     for (const e of db.estimates) {
@@ -454,7 +481,6 @@ export function createMockRepositories(): Repositories {
     e.lineItems = buildLineItems(safeHojas, catalog, upToLast)
     e.summary = buildSummary(e.lineItems, safeHojas, sections, {
       ivaRate: contract?.ivaRate ?? 16,
-      retentionPercentage: contract?.retentionPercentage ?? 5,
       cincoAlMillarRate: 0.5,
       anticipoPercentage: contract?.anticipoPercentage ?? 0,
     })
@@ -510,6 +536,12 @@ export function createMockRepositories(): Repositories {
       },
       async create(input: CreateContractInput) {
         await delay()
+        if (input.initialConcepts.some((c) => !Number.isInteger(c.contractedQuantity))) {
+          throw new RepositoryError(422, 'El volumen contratado de cada concepto debe ser un número entero', 'non_integer_quantity')
+        }
+        if ((input.scheduleEntries ?? []).some((e) => !Number.isInteger(e.plannedQuantity))) {
+          throw new RepositoryError(422, 'Las cantidades del programa de obra deben ser números enteros', 'non_integer_quantity')
+        }
         const now = new Date()
         const contractId = genId('CT')
 
@@ -558,7 +590,6 @@ export function createMockRepositories(): Repositories {
           amount,
           anticipoPercentage: input.anticipoPercentage,
           ivaRate: input.ivaRate,
-          retentionPercentage: input.retentionPercentage,
           estimatePeriodicity: input.estimatePeriodicity,
           startDate: input.startDate,
           endDate: input.endDate,
@@ -795,6 +826,13 @@ export function createMockRepositories(): Repositories {
         await delay()
         const contract = db.contracts.find((c) => c.id === input.contractId)
         if (!contract) throw notFound('Contrato')
+        if (contract.status !== 'active') {
+          throw new RepositoryError(
+            409,
+            'No se pueden crear estimaciones: el proceso de recepción/cierre del contrato ya comenzó',
+            'contract_not_active',
+          )
+        }
         const corp = db.corporations.find((c) => c.id === contract.contractorCorporationId)
         const entity = db.users.find((u) => u.id === contract.entityId)
         const prior = db.estimates.filter((e) => e.contractId === input.contractId)
@@ -863,7 +901,7 @@ export function createMockRepositories(): Repositories {
           lineItems: [],
           summary: { partidas: [], partidasSubtotal: 0, calculations: {
             ivaRate: contract.ivaRate ?? 16, estimateAmount: 0, estimateIva: 0, estimateTotal: 0,
-            anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0, retentions: 0,
+            anticipoAmortization: 0, amortizationIva: 0, amortizationTotal: 0,
             cincoAlMillarSfp: 0, total: 0,
           } },
           evidenceFileIds: [],
@@ -919,6 +957,13 @@ export function createMockRepositories(): Repositories {
             throw new RepositoryError(409, `El concepto ${concept.specificationNumber} no está programado para este período`, 'concept_not_scheduled')
           }
           const rowsTotal = hi.rows.reduce((s, r) => s + (Number.isFinite(r.quantity) ? r.quantity : 0), 0)
+          if (hi.rows.some((r) => !Number.isInteger(r.quantity))) {
+            throw new RepositoryError(
+              422,
+              `La cantidad del concepto ${concept.specificationNumber} debe ser un número entero`,
+              'non_integer_quantity',
+            )
+          }
           if (rowsTotal > planned) {
             throw new RepositoryError(
               409,
@@ -1147,6 +1192,7 @@ export function createMockRepositories(): Repositories {
       },
       async create(input: CreateLogNoteInput) {
         await delay()
+        assertContractOpen(input.contractId)
         const contractNotes = db.logNotes.filter((n) => n.contractId === input.contractId)
         const maxFolio = contractNotes.reduce((m, n) => Math.max(m, n.folio), 0)
         const nextFolio = maxFolio + 1
@@ -1254,6 +1300,8 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
       },
       async create(input: CreateAgreementInput) {
         await delay()
+        assertContractOpen(input.contractId)
+        assertIntegerAgreementQuantities(input)
         const unresolved = db.agreements.find(
           (x) => x.contractId === input.contractId &&
             x.status !== 'approved' && x.status !== 'rejected',
@@ -1299,6 +1347,7 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
         if (a.status !== 'draft' && a.status !== 'with_notes') {
           throw new RepositoryError(409, 'Solo se editan convenios en borrador o con notas', 'not_editable')
         }
+        assertIntegerAgreementQuantities(patch)
         Object.assign(a, patch, {
           kind: a.kind, // kind is fixed at creation, never changed on edit
           newSections: patch.newSections ?? a.newSections ?? [],
@@ -1513,11 +1562,21 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
     },
 
     // --- reception ---------------------------------------------------------
-    reception: makeCloseFlow<ReceptionStatement>(db.reception, 'Acta de recepción', () => currentUserId, pendingSignatures, event, applySignature, 'R', db, save),
+    reception: makeCloseFlow<ReceptionStatement>(db.reception, 'Acta de recepción', () => currentUserId, pendingSignatures, event, applySignature, 'R', db, save, {
+      onInitiate: (contractId) => {
+        const c = db.contracts.find((x: Contract) => x.id === contractId)
+        if (c && c.status === 'active') c.status = 'closing'
+      },
+    }),
 
     // --- finiquito ---------------------------------------------------------
     finiquito: {
-      ...makeCloseFlow<FiniquitoStatement>(db.finiquito, 'Finiquito', () => currentUserId, pendingSignatures, event, applySignature, 'F', db, save),
+      ...makeCloseFlow<FiniquitoStatement>(db.finiquito, 'Finiquito', () => currentUserId, pendingSignatures, event, applySignature, 'F', db, save, {
+        onApprove: (contractId) => {
+          const c = db.contracts.find((x: Contract) => x.id === contractId)
+          if (c) c.status = 'closed'
+        },
+      }),
       async initiate(contractId: string) {
         await delay()
         const rec = db.reception.find((r) => r.contractId === contractId)
@@ -1634,6 +1693,7 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
         await deleteBlobs(removedFiles.map((x) => x.id)).catch(() => { /* best-effort */ })
       },
       async upload(input: UploadFileInput, onProgress?: UploadProgress) {
+        assertContractOpen(input.contractId)
         if (input.file.size > MAX_UPLOAD_SIZE_BYTES) {
           throw new RepositoryError(
             413,
@@ -1722,6 +1782,7 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
       },
       async create(input: CreateEvidenceNoteInput) {
         await delay()
+        assertContractOpen(input.contractId)
         const note: EvidenceNote = {
           id: genId('EVN'),
           contractId: input.contractId,
@@ -1873,6 +1934,7 @@ function makeCloseFlow<T extends CloseEntity>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
   save: () => void,
+  hooks?: { onInitiate?: (contractId: string) => void; onApprove?: (contractId: string) => void },
 ) {
   const delayLocal = (ms = 150) => new Promise<void>((r) => setTimeout(r, ms))
   const cloneLocal = <V>(v: V): V => structuredClone(v)
@@ -1901,6 +1963,7 @@ function makeCloseFlow<T extends CloseEntity>(
         createdAt: new Date(),
       } as unknown as T
       arr.push(entity)
+      hooks?.onInitiate?.(contractId)
       save()
       return cloneLocal(entity)
     },
@@ -1921,6 +1984,7 @@ function makeCloseFlow<T extends CloseEntity>(
       if (e.status !== 'pending_entity') throw new RepositoryError(409, 'El documento debe estar pendiente de aprobación de entidad', 'wrong_status')
       e.status = 'approved'
       e.history.push(event('entity_approved'))
+      hooks?.onApprove?.(e.contractId)
       save()
       return cloneLocal(e)
     },

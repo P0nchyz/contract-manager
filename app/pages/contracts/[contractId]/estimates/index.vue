@@ -15,10 +15,14 @@ const { data: estimates, status, error, refresh } = await useAsyncData(
   () => repos.estimates.listByContract(contractId.value),
   { default: () => [] }
 )
+const { data: contract } = await useAsyncData(
+  `contract-estimates-contract-${contractId.value}`,
+  () => repos.contracts.getById(contractId.value),
+)
 // Newest period first; within the same period, approved/paid > submitted > draft > rejected
 const sortedEstimates = computed(() => [...estimates.value].sort(compareEstimatesForDisplay))
 
-const canCreate = computed(() => can('estimate:create'))
+const canCreate = computed(() => can('estimate:create') && contract.value?.status === 'active')
 
 // ─── Delete draft ─────────────────────────────────────────────────────────────
 const deletingId = ref<string | null>(null)
@@ -69,6 +73,8 @@ const columns = [
         class="mb-4" />
       <UAlert v-if="deleteError" color="error" variant="soft" icon="i-lucide-alert-triangle" :title="deleteError"
         class="mb-4" />
+      <UAlert v-if="can('estimate:create') && contract && contract.status !== 'active'" color="neutral" variant="soft"
+        icon="i-lucide-info" :title="S.contractDashboard.estimatesLockedByClosing" class="mb-4" />
 
       <!-- Changed from :rows to :data -->
       <UTable :data="sortedEstimates" :columns="columns" :loading="status === 'pending'"

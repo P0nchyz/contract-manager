@@ -206,6 +206,13 @@ function isOverScheduled(h: WHoja): boolean {
 }
 const anyOverScheduled = computed(() => hojas.value.some((h) => isOverScheduled(h)))
 
+// ─── Quantities must be whole numbers ─────────────────────────────────────────
+function rowHasDecimal(r: WRow): boolean {
+  const v = parseFloat(r.quantity)
+  return Number.isFinite(v) && !Number.isInteger(v)
+}
+const anyDecimalQuantity = computed(() => hojas.value.some((h) => h.rows.some(rowHasDecimal)))
+
 // ─── Submission requirements ──────────────────────────────────────────────────
 // Rows registering 0 for the period are exempt from photo/log-note evidence —
 // there's nothing to document. Rows with quantity > 0 need both.
@@ -223,6 +230,7 @@ const missingScheduledConcepts = computed(() => availableConcepts.value)
 const canSubmitEstimate = computed(() =>
   hojas.value.length > 0 &&
   !anyOverScheduled.value &&
+  !anyDecimalQuantity.value &&
   hojasMissingPhoto.value.length === 0 &&
   hojasMissingLogNote.value.length === 0 &&
   missingScheduledConcepts.value.length === 0,
@@ -397,6 +405,7 @@ async function ensureDraft(): Promise<Estimate> {
 
 async function saveDraft() {
   if (anyOverScheduled.value) { saveError.value = F.validation.exceedsSchedule; return }
+  if (anyDecimalQuantity.value) { saveError.value = F.validation.qtyInteger; return }
   saving.value = true; saveError.value = null
   try {
     const e = await ensureDraft()
@@ -415,6 +424,7 @@ async function goToReview() {
 
 async function submit() {
   if (anyOverScheduled.value) { saveError.value = F.validation.exceedsSchedule; return }
+  if (anyDecimalQuantity.value) { saveError.value = F.validation.qtyInteger; return }
   if (hojasMissingPhoto.value.length) { saveError.value = F.validation.photoRequired; return }
   if (hojasMissingLogNote.value.length) { saveError.value = F.validation.logNoteRequired; return }
   if (missingScheduledConcepts.value.length) { saveError.value = F.validation.missingScheduledConcepts; return }
@@ -592,8 +602,8 @@ const reviewEstimate = computed(() => currentEstimate.value)
                           <td class="px-2 py-1.5 text-right tabular-nums text-muted">
                             {{ formatNumber(conceptOf(h.conceptId)?.contractedQuantity ?? 0) }}</td>
                           <td class="px-2 py-1.5">
-                            <UInput v-model="r.quantity" type="number" size="xs" class="w-24" :placeholder="'0'"
-                              :color="isOverScheduled(h) ? 'error' : undefined" />
+                            <UInput v-model="r.quantity" type="number" step="1" size="xs" class="w-24" :placeholder="'0'"
+                              :color="isOverScheduled(h) || rowHasDecimal(r) ? 'error' : undefined" />
                           </td>
                           <td class="px-2 py-1.5">
                             <div class="flex items-center gap-2">
@@ -688,11 +698,11 @@ const reviewEstimate = computed(() => currentEstimate.value)
 
               <template #footer>
                 <div class="flex justify-between">
-                  <UButton color="neutral" variant="ghost" :disabled="anyOverScheduled" :loading="saving"
+                  <UButton color="neutral" variant="ghost" :disabled="anyOverScheduled || anyDecimalQuantity" :loading="saving"
                     @click="saveDraft">
                     {{ F.saveDraft }}
                   </UButton>
-                  <UButton icon="i-lucide-arrow-right" :disabled="!hojas.length || anyOverScheduled" :loading="saving"
+                  <UButton icon="i-lucide-arrow-right" :disabled="!hojas.length || anyOverScheduled || anyDecimalQuantity" :loading="saving"
                     @click="goToReview">
                     {{ F.steps.review }}
                   </UButton>

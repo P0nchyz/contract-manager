@@ -61,7 +61,8 @@ const { data, status, error, refresh } = await useAsyncData(
   },
 )
 
-const canCreateAgreement = computed(() => can('agreement:create'))
+const isContractClosed = computed(() => data.value?.contract.status === 'closed')
+const canCreateAgreement = computed(() => can('agreement:create') && !isContractClosed.value)
 const hasUnresolvedAgreement = computed(() =>
   (data.value?.agreements ?? []).some((a) => a.status !== 'approved' && a.status !== 'rejected'),
 )
@@ -72,7 +73,7 @@ const canInitiateReception = computed(() => can('close:initiate'))
 // The contracted/supervisory corporation is fixed at contract creation and
 // can't be changed here — only which person from that same corporation holds
 // the role.
-const canAssignRoles = computed(() => can('contract:assign'))
+const canAssignRoles = computed(() => can('contract:assign') && !isContractClosed.value)
 const showReassignModal = ref(false)
 const reassignSaving = ref(false)
 const reassignError = ref<string | null>(null)
@@ -210,6 +211,8 @@ const totalContracted = computed(() =>
       </div>
 
       <div v-else-if="data" class="space-y-6">
+        <UAlert v-if="isContractClosed" color="neutral" variant="soft" icon="i-lucide-lock"
+          :title="CI.readOnly.title" :description="CI.readOnly.description" />
         <UTabs v-model="activeTab" :items="tabItems" class="w-full">
           <template #general>
             <div class="mt-4 space-y-6">

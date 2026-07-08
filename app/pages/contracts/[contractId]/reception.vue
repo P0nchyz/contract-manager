@@ -2,8 +2,9 @@
 <script setup lang="ts">
 import { S } from '~/constants/strings'
 import { isRepositoryError } from '~/data/errors'
-import { agreementStatusDisplay } from '~/utils/format'
-import type { UserId } from '~/data/models'
+import { agreementStatusDisplay, formatNumber } from '~/utils/format'
+import { fileIcon } from '~/utils/fileIcon'
+import type { UserId, FileAsset } from '~/data/models'
 
 definePageMeta({ requiredPermission: 'estimate:view' })
 
@@ -18,19 +19,63 @@ const contractId = computed(() => route.params.contractId as string)
 const { data, status, error, refresh } = await useAsyncData(
   () => `reception-${contractId.value}`,
   async () => {
-    const [reception, users] = await Promise.all([
+    const [reception, users, concepts, sections, estimates, files] = await Promise.all([
       repos.reception.getByContract(contractId.value).catch(() => null),
       repos.users.list().catch(() => []),
+      repos.concepts.listByContract(contractId.value).catch(() => []),
+      repos.concepts.listSectionsByContract(contractId.value).catch(() => []),
+      repos.estimates.listByContract(contractId.value).catch(() => []),
+      repos.files.listFiles(contractId.value).catch(() => []),
     ])
     const names: Record<string, string> = {}
     for (const u of users) names[u.id] = u.fullName
-    return { reception, names }
+    const fileById: Record<string, typeof files[number]> = {}
+    for (const f of files) fileById[f.id] = f
+
+    // Only APPROVED/PAID estimates count toward "done" — drafts/rejected/
+    // submitted don't represent confirmed executed work.
+    const countedEstimates = estimates.filter((e) => e.status === 'approved' || e.status === 'paid')
+
+    const conceptProgress = concepts.map((c) => {
+      let doneQty = 0
+      const evidenceIds = new Set<string>()
+      for (const est of countedEstimates) {
+        for (const h of est.hojas) {
+          if (String(h.conceptId) !== String(c.id)) continue
+          for (const r of h.rows) {
+            doneQty += r.quantity
+            if (r.photoFileId) evidenceIds.add(String(r.photoFileId))
+            for (const fid of r.fileIds ?? []) evidenceIds.add(String(fid))
+          }
+        }
+      }
+      const section = sections.find((s) => s.id === c.sectionId)
+      return {
+        concept: c,
+        sectionLabel: section ? `${section.specificationNumber} ${section.description}` : null,
+        doneQty,
+        missing: doneQty < c.contractedQuantity,
+        evidence: [...evidenceIds].map((id) => fileById[id]).filter((f): f is NonNullable<typeof f> => !!f),
+      }
+    }).sort((a, b) => a.concept.specificationNumber.localeCompare(b.concept.specificationNumber, 'es'))
+
+    return { reception, names, conceptProgress }
   },
 )
 
 const reception = computed(() => data.value?.reception ?? null)
 const userName = (id: UserId | null | undefined) =>
   (id && data.value?.names[id]) || (id ?? '—')
+
+// --- Concept completion + evidence ---
+const conceptProgress = computed(() => data.value?.conceptProgress ?? [])
+const missingConceptsCount = computed(() => conceptProgress.value.filter((c) => c.missing).length)
+const viewerOpen = ref(false)
+const viewingFile = ref<FileAsset | null>(null)
+function openViewer(file: FileAsset) {
+  viewingFile.value = file
+  viewerOpen.value = true
+}
 
 // --- Log note step (shown before initiating when none exists) ---
 // The resident fills in the closing log note first; on submit the note is
@@ -225,6 +270,50 @@ const reject = () => withNote(repos.reception.reject)
           :title="reception.status === 'rejected' ? R.banner.rejected : R.banner.withNotes"
           :description="latestNote.note" />
 
+        <!-- Concept completion + evidence -->
+        <UCard>
+          <template #header>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 font-medium">
+                <UIcon name="i-lucide-list-checks" class="size-4 text-muted" />
+                {{ R.concepts.title }}
+              </div>
+              <UBadge v-if="missingConceptsCount > 0" :label="`${missingConceptsCount} ${R.concepts.missingBadge}`"
+                color="warning" variant="subtle" size="sm" />
+              <UBadge v-else color="success" variant="subtle" size="sm" :label="R.concepts.allDone" />
+            </div>
+          </template>
+          <div v-if="!conceptProgress.length" class="px-4 py-6 text-sm text-muted">{{ R.concepts.empty }}</div>
+          <ul v-else class="divide-y divide-default">
+            <li v-for="cp in conceptProgress" :key="cp.concept.id" class="px-4 py-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-highlighted">
+                    {{ cp.concept.specificationNumber }} — {{ cp.concept.description }}
+                  </div>
+                  <div v-if="cp.sectionLabel" class="text-xs text-muted">{{ cp.sectionLabel }}</div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs tabular-nums text-muted">
+                    {{ formatNumber(cp.doneQty) }} / {{ formatNumber(cp.concept.contractedQuantity) }} {{ cp.concept.unit }}
+                  </span>
+                  <UBadge v-if="cp.missing" :label="R.concepts.missing" color="warning" variant="subtle" size="sm" />
+                  <UBadge v-else :label="R.concepts.done" color="success" variant="subtle" size="sm" />
+                </div>
+              </div>
+              <div v-if="cp.evidence.length" class="mt-2 flex flex-wrap gap-2">
+                <button v-for="f in cp.evidence" :key="f.id" type="button"
+                  class="flex items-center gap-1.5 rounded-md border border-default bg-elevated/40 px-2 py-1 text-xs text-muted hover:bg-elevated/70"
+                  @click="openViewer(f)">
+                  <UIcon :name="fileIcon(f.mimeType)" class="size-3.5 shrink-0" />
+                  <span class="max-w-32 truncate">{{ f.name }}</span>
+                </button>
+              </div>
+              <p v-else class="mt-2 text-xs text-muted">{{ R.concepts.noEvidence }}</p>
+            </li>
+          </ul>
+        </UCard>
+
         <!-- Inline review -->
         <UCard v-if="showReview">
           <template #header>
@@ -324,10 +413,55 @@ const reject = () => withNote(repos.reception.reject)
 
       <!-- Non-initiating roles when no reception yet -->
       <div v-else-if="!reception" class="space-y-6">
+        <UCard>
+          <template #header>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 font-medium">
+                <UIcon name="i-lucide-list-checks" class="size-4 text-muted" />
+                {{ R.concepts.title }}
+              </div>
+              <UBadge v-if="missingConceptsCount > 0" :label="`${missingConceptsCount} ${R.concepts.missingBadge}`"
+                color="warning" variant="subtle" size="sm" />
+              <UBadge v-else color="success" variant="subtle" size="sm" :label="R.concepts.allDone" />
+            </div>
+          </template>
+          <div v-if="!conceptProgress.length" class="px-4 py-6 text-sm text-muted">{{ R.concepts.empty }}</div>
+          <ul v-else class="divide-y divide-default">
+            <li v-for="cp in conceptProgress" :key="cp.concept.id" class="px-4 py-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-highlighted">
+                    {{ cp.concept.specificationNumber }} — {{ cp.concept.description }}
+                  </div>
+                  <div v-if="cp.sectionLabel" class="text-xs text-muted">{{ cp.sectionLabel }}</div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs tabular-nums text-muted">
+                    {{ formatNumber(cp.doneQty) }} / {{ formatNumber(cp.concept.contractedQuantity) }} {{ cp.concept.unit }}
+                  </span>
+                  <UBadge v-if="cp.missing" :label="R.concepts.missing" color="warning" variant="subtle" size="sm" />
+                  <UBadge v-else :label="R.concepts.done" color="success" variant="subtle" size="sm" />
+                </div>
+              </div>
+              <div v-if="cp.evidence.length" class="mt-2 flex flex-wrap gap-2">
+                <button v-for="f in cp.evidence" :key="f.id" type="button"
+                  class="flex items-center gap-1.5 rounded-md border border-default bg-elevated/40 px-2 py-1 text-xs text-muted hover:bg-elevated/70"
+                  @click="openViewer(f)">
+                  <UIcon :name="fileIcon(f.mimeType)" class="size-3.5 shrink-0" />
+                  <span class="max-w-32 truncate">{{ f.name }}</span>
+                </button>
+              </div>
+              <p v-else class="mt-2 text-xs text-muted">{{ R.concepts.noEvidence }}</p>
+            </li>
+          </ul>
+        </UCard>
+
         <div class="rounded-lg border border-dashed border-default py-16 text-center text-sm text-muted">
           {{ S.contractInfo.closing.notStarted }}
         </div>
       </div>
     </template>
   </UDashboardPanel>
+
+  <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />
 </template>

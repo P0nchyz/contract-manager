@@ -146,7 +146,7 @@ function reductionQtyFor(conceptId: string, periodIdx0: number): number {
   return reductionQty.value[conceptId]?.[periodIdx0] ?? 0
 }
 function setReductionQty(conceptId: string, periodIdx0: number, raw: string) {
-  const v = parseFloat(raw)
+  const v = Math.round(parseFloat(raw))
   if (!reductionQty.value[conceptId]) reductionQty.value[conceptId] = {}
   reductionQty.value[conceptId][periodIdx0] = isNaN(v) ? 0 : v
 }
@@ -224,7 +224,7 @@ function allocationQtyFor(idx: number, periodIdx0: number): number {
   return newConceptAllocation.value[idx]?.[periodIdx0] ?? 0
 }
 function setAllocationQty(idx: number, periodIdx0: number, raw: string) {
-  const v = parseFloat(raw)
+  const v = Math.round(parseFloat(raw))
   if (!newConceptAllocation.value[idx]) newConceptAllocation.value[idx] = {}
   newConceptAllocation.value[idx][periodIdx0] = isNaN(v) ? 0 : v
 }
@@ -325,7 +325,7 @@ function workingQtyFor(conceptId: string, periodIdx0: number): number {
   return workingQty.value[conceptId]?.[periodIdx0] ?? 0
 }
 function setWorkingQty(conceptId: string, periodIdx0: number, raw: string) {
-  const v = parseFloat(raw)
+  const v = Math.round(parseFloat(raw))
   if (!workingQty.value[conceptId]) workingQty.value[conceptId] = {}
   workingQty.value[conceptId][periodIdx0] = isNaN(v) ? 0 : v
 }
@@ -560,6 +560,7 @@ const conceptChangeErrors = computed(() =>
     const orig = data.value?.concepts.find((c) => c.id === cc.conceptId)
     const qty = parseFloat(cc._newQtyRaw)
     if (!orig || isNaN(qty)) return ''
+    if (!Number.isInteger(qty)) return AG.conceptChanges.validation.qtyInteger
     return qty >= orig.contractedQuantity ? AG.conceptChanges.validation.mustReduce : ''
   }),
 )
@@ -572,7 +573,8 @@ const newConceptErrors = computed(() =>
     spec: nc.specificationNumber.trim() ? '' : AG.newConcepts.validation.specRequired,
     desc: nc.description.trim() ? '' : AG.newConcepts.validation.descRequired,
     unit: nc.unit.trim() ? '' : AG.newConcepts.validation.unitRequired,
-    qty: parseFloat(nc._qtyRaw) > 0 ? '' : AG.newConcepts.validation.qtyRequired,
+    qty: !(parseFloat(nc._qtyRaw) > 0) ? AG.newConcepts.validation.qtyRequired
+      : !Number.isInteger(parseFloat(nc._qtyRaw)) ? AG.newConcepts.validation.qtyInteger : '',
     price: parseFloat(nc._priceRaw) > 0 ? '' : AG.newConcepts.validation.priceRequired,
     extend: nc._mode === 'extend' && !nc.extendsConceptId ? AG.newConcepts.validation.extendConceptRequired : '',
   })),
@@ -796,7 +798,7 @@ async function onSave() {
                         {{formatNumber(data.concepts.find(c => c.id === cc.conceptId)?.contractedQuantity ?? 0)}}
                       </td>
                       <td class="px-3 py-2">
-                        <UInput v-model="cc._newQtyRaw" type="number" min="0" step="any"
+                        <UInput v-model="cc._newQtyRaw" type="number" min="0" step="1"
                           :placeholder="String(data.concepts.find(c => c.id === cc.conceptId)?.contractedQuantity ?? '')"
                           :color="conceptChangeErrors[idx] ? 'error' : undefined"
                           class="w-28 [&_input]:text-right [&_input]:text-warning [&_input]:font-medium" />
@@ -831,7 +833,7 @@ async function onSave() {
                         <div v-for="p in scheduledPeriodsFor(String(cc.conceptId))" :key="p"
                           class="flex flex-col items-center gap-0.5">
                           <span class="text-[10px] text-muted">P{{ p + 1 }}</span>
-                          <UInput type="number" min="0" :max="unclaimedForReduction(String(cc.conceptId), p)" step="any"
+                          <UInput type="number" min="0" :max="unclaimedForReduction(String(cc.conceptId), p)" step="1"
                             :model-value="reductionQtyFor(String(cc.conceptId), p)"
                             class="w-16 [&_input]:px-1.5 [&_input]:text-center [&_input]:text-xs"
                             @update:model-value="(v) => setReductionQty(String(cc.conceptId), p, String(v))" />
@@ -911,7 +913,7 @@ async function onSave() {
                     <UInput v-model="nc.unit" class="w-full" placeholder="m2" :disabled="nc._mode === 'extend'" />
                   </UFormField>
                   <UFormField :label="AG.newConcepts.columns.qty" :error="newConceptErrors[idx]?.qty || undefined">
-                    <UInput v-model="nc._qtyRaw" type="number" min="0" step="any"
+                    <UInput v-model="nc._qtyRaw" type="number" min="0" step="1"
                       class="w-full [&_input]:text-right [&_input]:text-warning [&_input]:font-medium" />
                   </UFormField>
                   <UFormField :label="AG.newConcepts.columns.unitPrice"
@@ -937,7 +939,7 @@ async function onSave() {
                     <div v-for="(period, p) in (data?.periods ?? [])" :key="p"
                       class="flex flex-col items-center gap-0.5">
                       <span class="text-[10px] text-muted">P{{ p + 1 }}</span>
-                      <UInput type="number" min="0" step="any" :model-value="allocationQtyFor(idx, p)"
+                      <UInput type="number" min="0" step="1" :model-value="allocationQtyFor(idx, p)"
                         class="w-16 [&_input]:px-1.5 [&_input]:text-center [&_input]:text-xs"
                         @update:model-value="(v) => setAllocationQty(idx, p, String(v))" />
                     </div>
@@ -1068,7 +1070,7 @@ async function onSave() {
                           size="xs" class="ml-1.5" />
                       </div>
                       <div class="flex items-center gap-1.5 shrink-0">
-                        <UInput type="number" step="any" :model-value="workingQtyFor(String(c.id), activeScheduleTab)"
+                        <UInput type="number" step="1" :model-value="workingQtyFor(String(c.id), activeScheduleTab)"
                           :min="isPeriodBeingRemoved(activeScheduleTab) ? 0 : cellMin(String(c.id), activeScheduleTab)"
                           :max="isPeriodBeingRemoved(activeScheduleTab) ? 0 : (cellMax(String(c.id), activeScheduleTab) ?? undefined)"
                           :disabled="!isPeriodBeingRemoved(activeScheduleTab) && isCellLocked(String(c.id), activeScheduleTab)"

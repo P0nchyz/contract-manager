@@ -42,7 +42,6 @@ const endDate = ref('')
 // ─── Form: section 2 — rates + periodicity ───────────────────────────────────
 const anticipoPct = ref<number | ''>(20)
 const ivaRate = ref<number | ''>(16)
-const retentionPct = ref<number | ''>(5)
 const periodicity = ref<'monthly' | 'biweekly'>('monthly')
 
 const periodicityOptions = [
@@ -160,7 +159,7 @@ const resolvedConcepts = computed<CreateConceptInput[]>(() =>
     specificationNumber: c.specificationNumber.trim(),
     description: c.description.trim(),
     unit: c.unit.trim(),
-    contractedQuantity: parseFloat(c._qtyRaw) || 0,
+    contractedQuantity: Math.round(parseFloat(c._qtyRaw)) || 0,
     unitPrice: Math.round((parseFloat(c._priceRaw) || 0) * 100),
     // Pass _sectionIdx as a numeric string so the mock can resolve it to the
     // generated ConceptSectionId by position in initialSections.
@@ -175,7 +174,8 @@ const conceptErrors = computed(() =>
     spec: c.specificationNumber.trim() ? '' : F.concepts.validation.specRequired,
     desc: c.description.trim() ? '' : F.concepts.validation.descRequired,
     unit: c.unit.trim() ? '' : F.concepts.validation.unitRequired,
-    qty: parseFloat(c._qtyRaw) > 0 ? '' : F.concepts.validation.qtyPositive,
+    qty: !(parseFloat(c._qtyRaw) > 0) ? F.concepts.validation.qtyPositive
+      : !Number.isInteger(parseFloat(c._qtyRaw)) ? F.concepts.validation.qtyInteger : '',
     price: parseFloat(c._priceRaw) > 0 ? '' : F.concepts.validation.pricePositive,
   })),
 )
@@ -277,6 +277,10 @@ const scheduleErrors = computed(() =>
   concepts.value.map((c, ci) => {
     const contracted = parseFloat(c._qtyRaw) || 0
     const total = conceptTotals.value[ci] ?? 0
+    const row = scheduleGrid.value[ci] ?? []
+    if (row.some((v) => v.trim() !== '' && !Number.isInteger(parseFloat(v)))) {
+      return F.schedule.validation.qtyInteger
+    }
     if (contracted > 0 && Math.abs(total - contracted) > 0.001) return F.schedule.validation.sumMismatch
     return null
   }),
@@ -313,7 +317,6 @@ const errors = computed(() => ({
     : startDate.value >= endDate.value ? F.validation.endBeforeStart : null,
   anticipo: (anticipoPct.value === '' || Number(anticipoPct.value) < 0 || Number(anticipoPct.value) > 30) ? F.validation.anticipoRange : null,
   iva: (ivaRate.value === '' || Number(ivaRate.value) < 0 || Number(ivaRate.value) > 100) ? F.validation.ivaRange : null,
-  retention: (retentionPct.value === '' || Number(retentionPct.value) < 0 || Number(retentionPct.value) > 100) ? F.validation.retentionRange : null,
   resident: !residentId.value ? F.validation.residentRequired : null,
   superintendent: !superintendentId.value ? F.validation.superintendentRequired : null,
   supervisor: !supervisorId.value ? F.validation.supervisorRequired : null,
@@ -336,7 +339,6 @@ async function onSubmit() {
       title: title.value.trim(),
       anticipoPercentage: Number(anticipoPct.value),
       ivaRate: Number(ivaRate.value),
-      retentionPercentage: Number(retentionPct.value),
       estimatePeriodicity: periodicity.value,
       startDate: new Date(`${startDate.value}T12:00:00`),
       endDate: new Date(`${endDate.value}T12:00:00`),
@@ -496,7 +498,7 @@ const sections = [
           </div>
         </UCard>
 
-        <!-- ② Tasas, retenciones y periodicidad -->
+        <!-- ② Tasas y periodicidad -->
         <UCard id="sec-rates" class="scroll-mt-16">
           <template #header>
             <div class="flex items-center gap-2 font-medium">
@@ -504,7 +506,7 @@ const sections = [
               {{ F.sections.rates }}
             </div>
           </template>
-          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <UFormField :label="F.fields.anticipoPercentage" :error="errors.anticipo || undefined"
               :hint="F.fields.anticipoMax">
               <UInput v-model.number="anticipoPct" type="number" min="0" max="30" step="1" class="w-full">
@@ -516,18 +518,13 @@ const sections = [
                 <template #trailing><span class="pr-2 text-sm text-muted">%</span></template>
               </UInput>
             </UFormField>
-            <UFormField :label="F.fields.retentionPercentage" :error="errors.retention || undefined">
-              <UInput v-model.number="retentionPct" type="number" min="0" max="100" step="0.1" class="w-full">
-                <template #trailing><span class="pr-2 text-sm text-muted">%</span></template>
-              </UInput>
-            </UFormField>
             <div class="flex flex-col justify-center">
               <p class="text-xs text-muted">
                 <span class="font-medium">{{ F.fields.cincoAlMillar }}:</span>
                 {{ F.fields.cincoAlMillarFixed }}
               </p>
             </div>
-            <div class="sm:col-span-2 lg:col-span-4">
+            <div class="sm:col-span-2 lg:col-span-3">
               <UFormField :label="F.fields.estimatePeriodicity">
                 <div class="flex flex-wrap gap-3">
                   <label v-for="opt in periodicityOptions" :key="opt.value"
@@ -669,7 +666,7 @@ const sections = [
                       {{ conceptErrors[concepts.indexOf(c)].unit }}</p>
                   </div>
                   <div>
-                    <UInput v-model="c._qtyRaw" type="number" min="0" step="any" class="w-full [&_input]:text-right"
+                    <UInput v-model="c._qtyRaw" type="number" min="0" step="1" class="w-full [&_input]:text-right"
                       :color="conceptErrors[concepts.indexOf(c)]?.qty ? 'error' : undefined" />
                     <p v-if="conceptErrors[concepts.indexOf(c)]?.qty" class="mt-0.5 text-xs text-error">
                       {{ conceptErrors[concepts.indexOf(c)].qty }}</p>
@@ -731,7 +728,7 @@ const sections = [
                       {{ conceptErrors[concepts.indexOf(c)].unit }}</p>
                   </div>
                   <div>
-                    <UInput v-model="c._qtyRaw" type="number" min="0" step="any" class="w-full [&_input]:text-right"
+                    <UInput v-model="c._qtyRaw" type="number" min="0" step="1" class="w-full [&_input]:text-right"
                       :color="conceptErrors[concepts.indexOf(c)]?.qty ? 'error' : undefined" />
                     <p v-if="conceptErrors[concepts.indexOf(c)]?.qty" class="mt-0.5 text-xs text-error">
                       {{ conceptErrors[concepts.indexOf(c)].qty }}</p>
@@ -834,7 +831,7 @@ const sections = [
                         <span class="ml-2 text-sm text-highlighted">{{ c.description }}</span>
                       </div>
                       <div class="flex items-center gap-1.5 shrink-0">
-                        <UInput v-model="scheduleGrid[ci][activePeriodTab]" type="number" min="0" step="any"
+                        <UInput v-model="scheduleGrid[ci][activePeriodTab]" type="number" min="0" step="1"
                           class="w-24 [&_input]:text-right [&_input]:text-success [&_input]:font-medium" />
                         <span class="text-xs text-muted">{{ c.unit }}</span>
                       </div>
@@ -845,7 +842,7 @@ const sections = [
                       <div class="shrink-0 text-xs tabular-nums"
                         :class="scheduleErrors[ci] ? 'text-error' : 'text-muted'">
                         {{ F.schedule.scheduledTotal }}:
-                        <span class="font-medium">{{ (conceptTotals[ci] ?? 0).toFixed(2) }} / {{ parseFloat(c._qtyRaw)
+                        <span class="font-medium">{{ Math.round(conceptTotals[ci] ?? 0) }} / {{ parseFloat(c._qtyRaw)
                           || 0 }}</span>
                       </div>
                       <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost"
@@ -868,7 +865,7 @@ const sections = [
                       <span class="ml-2 text-sm text-highlighted">{{ c.description }}</span>
                     </div>
                     <div class="flex items-center gap-1.5 shrink-0">
-                      <UInput v-model="scheduleGrid[ci][activePeriodTab]" type="number" min="0" step="any"
+                      <UInput v-model="scheduleGrid[ci][activePeriodTab]" type="number" min="0" step="1"
                         class="w-24 [&_input]:text-right [&_input]:text-success [&_input]:font-medium" />
                       <span class="text-xs text-muted">{{ c.unit }}</span>
                     </div>
@@ -880,7 +877,7 @@ const sections = [
                     <div class="shrink-0 text-xs tabular-nums"
                       :class="scheduleErrors[ci] ? 'text-error' : 'text-muted'">
                       {{ F.schedule.scheduledTotal }}:
-                      <span class="font-medium">{{ (conceptTotals[ci] ?? 0).toFixed(2) }} / {{ parseFloat(c._qtyRaw) ||
+                      <span class="font-medium">{{ Math.round(conceptTotals[ci] ?? 0) }} / {{ parseFloat(c._qtyRaw) ||
                         0
                       }}</span>
                     </div>
@@ -898,7 +895,7 @@ const sections = [
                 :class="scheduleErrors[ci] ? 'text-error' : ''">
                 <span class="truncate">{{ c.description || `Concepto ${ci + 1}` }}</span>
                 <span class="shrink-0 tabular-nums ml-4">
-                  {{ (conceptTotals[ci] ?? 0).toFixed(2) }} / {{ parseFloat(c._qtyRaw) || 0 }} {{ c.unit }}
+                  {{ Math.round(conceptTotals[ci] ?? 0) }} / {{ parseFloat(c._qtyRaw) || 0 }} {{ c.unit }}
                   <span v-if="scheduleErrors[ci]" class="ml-1 text-error">⚠</span>
                 </span>
               </div>
