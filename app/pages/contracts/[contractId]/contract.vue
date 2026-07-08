@@ -56,7 +56,7 @@ const { data, status, error, refresh } = await useAsyncData(
     return {
       contract, agreements, reception, finiquito, nameOf, corpName, supCorpName,
       sections, concepts, groups, periods, scheduleEntries: schedule?.entries ?? [],
-      contractDocuments,
+      contractDocuments, users, corporations,
     }
   },
 )
@@ -67,6 +67,76 @@ const hasUnresolvedAgreement = computed(() =>
 )
 const canStartNewAgreement = computed(() => canCreateAgreement.value && !hasUnresolvedAgreement.value)
 const canInitiateReception = computed(() => can('close:initiate'))
+
+// ─── Reassign roles (entity only) ──────────────────────────────────────────────
+const canAssignRoles = computed(() => can('contract:assign'))
+const showReassignModal = ref(false)
+const reassignSaving = ref(false)
+const reassignError = ref<string | null>(null)
+const reassignResidentId = ref<string | null>(null)
+const reassignSuperintendentCorpId = ref<string | null>(null)
+const reassignSuperintendentId = ref<string | null>(null)
+const reassignSupervisorCorpId = ref<string | null>(null)
+const reassignSupervisorId = ref<string | null>(null)
+
+const reassignResidents = computed(() =>
+  (data.value?.users ?? []).filter((u) => u.role === 'resident' && u.active && u.entityId === data.value?.contract.entityId),
+)
+const reassignSuperintendents = computed(() =>
+  (data.value?.users ?? []).filter(
+    (u) => u.role === 'superintendent' && u.active && u.corporationId === reassignSuperintendentCorpId.value,
+  ),
+)
+const reassignSupervisors = computed(() =>
+  (data.value?.users ?? []).filter(
+    (u) => u.role === 'supervisor' && u.active && u.corporationId === reassignSupervisorCorpId.value,
+  ),
+)
+// Guarded: prefilling the modal sets corp + user together, and a plain watch
+// would otherwise fire after both assignments and null the user pick back out
+// (same corp-change-resets-user pattern as contracts/new.vue, but here it must
+// not run during the programmatic prefill — only on the person's own edits).
+const reassignPrefilling = ref(false)
+watch(reassignSuperintendentCorpId, () => {
+  if (!reassignPrefilling.value) reassignSuperintendentId.value = null
+})
+watch(reassignSupervisorCorpId, () => {
+  if (!reassignPrefilling.value) reassignSupervisorId.value = null
+})
+
+function openReassignModal() {
+  const c = data.value?.contract
+  if (!c) return
+  reassignPrefilling.value = true
+  reassignResidentId.value = c.residentId
+  reassignSuperintendentCorpId.value = c.superintendentCorporationId
+  reassignSuperintendentId.value = c.superintendentId
+  reassignSupervisorCorpId.value = c.supervisorCorporationId
+  reassignSupervisorId.value = c.supervisorId
+  reassignError.value = null
+  showReassignModal.value = true
+  nextTick(() => { reassignPrefilling.value = false })
+}
+
+async function saveReassign() {
+  reassignSaving.value = true
+  reassignError.value = null
+  try {
+    await repos.contracts.assignRoles(contractId.value, {
+      residentId: reassignResidentId.value,
+      superintendentId: reassignSuperintendentId.value,
+      supervisorId: reassignSupervisorId.value,
+      superintendentCorporationId: reassignSuperintendentCorpId.value,
+      supervisorCorporationId: reassignSupervisorCorpId.value,
+    })
+    showReassignModal.value = false
+    await refresh()
+  } catch (e) {
+    reassignError.value = isRepositoryError(e) ? e.message : S.common.error
+  } finally {
+    reassignSaving.value = false
+  }
+}
 
 // ─── Contract documents viewer ─────────────────────────────────────────────────
 const viewerOpen = ref(false)
@@ -205,9 +275,15 @@ const totalContracted = computed(() =>
               <!-- Parties -->
               <UCard>
                 <template #header>
-                  <div class="flex items-center gap-2 font-medium">
-                    <UIcon name="i-lucide-users" class="size-4 text-muted" />
-                    {{ CI.sections.parties }}
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 font-medium">
+                      <UIcon name="i-lucide-users" class="size-4 text-muted" />
+                      {{ CI.sections.parties }}
+                    </div>
+                    <UButton v-if="canAssignRoles" icon="i-lucide-user-cog" size="sm" color="neutral" variant="ghost"
+                      @click="openReassignModal">
+                      {{ CI.reassign.button }}
+                    </UButton>
                   </div>
                 </template>
                 <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -257,7 +333,8 @@ const totalContracted = computed(() =>
                   {{ CI.documents.empty }}
                 </div>
                 <ul v-else class="divide-y divide-default">
-                  <li v-for="file in data.contractDocuments" :key="file.id" class="flex items-center gap-3 py-2.5">
+                  <li v-for="file in data.contractDocuments" :key="file.id"
+                    class="flex items-center gap-3 py-2.5">
                     <UIcon :name="fileIcon(file.mimeType)" class="size-4 shrink-0 text-muted" />
                     <button type="button"
                       class="min-w-0 flex-1 truncate text-left text-sm text-highlighted hover:underline"
@@ -284,8 +361,8 @@ const totalContracted = computed(() =>
                   </div>
                 </template>
 
-                <UAlert v-if="canCreateAgreement && hasUnresolvedAgreement" class="mb-3" color="neutral" variant="soft"
-                  icon="i-lucide-info" :title="CI.agreements.blockedByUnresolved" />
+                <UAlert v-if="canCreateAgreement && hasUnresolvedAgreement" class="mb-3" color="neutral"
+                  variant="soft" icon="i-lucide-info" :title="CI.agreements.blockedByUnresolved" />
 
                 <div v-if="!data.agreements.length" class="text-sm text-muted">
                   {{ CI.agreements.empty }}
@@ -443,16 +520,14 @@ const totalContracted = computed(() =>
 
                         <tr v-for="c in group.concepts" :key="c.id"
                           class="border-t border-default/50 hover:bg-elevated/40 transition-colors">
-                          <td class="px-4 py-2.5 pl-8 font-mono text-xs text-highlighted">{{ c.specificationNumber }}
-                          </td>
+                          <td class="px-4 py-2.5 pl-8 font-mono text-xs text-highlighted">{{ c.specificationNumber }}</td>
                           <td class="min-w-[18rem] px-4 py-2.5 text-highlighted">
                             {{ c.description }}
                             <UBadge v-if="c.isExtra" :label="C.extraBadge" color="warning" variant="subtle" size="xs"
                               class="ml-1.5" />
                           </td>
                           <td class="px-4 py-2.5 text-muted">{{ c.unit }}</td>
-                          <td class="px-4 py-2.5 text-right tabular-nums text-highlighted">{{ formatMoney(c.unitPrice)
-                            }}
+                          <td class="px-4 py-2.5 text-right tabular-nums text-highlighted">{{ formatMoney(c.unitPrice) }}
                           </td>
                           <td class="px-4 py-2.5 text-right tabular-nums text-highlighted">{{
                             formatNumber(c.contractedQuantity) }}</td>
@@ -498,4 +573,51 @@ const totalContracted = computed(() =>
   </UDashboardPanel>
 
   <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />
+
+  <UModal v-model:open="showReassignModal" :title="CI.reassign.title">
+    <template #body>
+      <div class="space-y-4">
+        <UFormField :label="CI.reassign.resident">
+          <USelect v-model="reassignResidentId"
+            :items="reassignResidents.map((u) => ({ label: u.fullName, value: u.id }))"
+            :placeholder="`— ${CI.reassign.resident} —`" class="w-full" />
+        </UFormField>
+
+        <UFormField :label="CI.reassign.superintendentCorp">
+          <USelect v-model="reassignSuperintendentCorpId"
+            :items="(data?.corporations ?? []).map((c) => ({ label: c.name, value: c.id }))"
+            :placeholder="`— ${CI.reassign.superintendentCorp} —`" class="w-full" />
+        </UFormField>
+        <UFormField :label="CI.reassign.superintendent">
+          <USelect v-model="reassignSuperintendentId" :disabled="!reassignSuperintendentCorpId"
+            :items="reassignSuperintendents.map((u) => ({ label: u.fullName, value: u.id }))"
+            :placeholder="`— ${CI.reassign.superintendent} —`" class="w-full" />
+        </UFormField>
+
+        <UFormField :label="CI.reassign.supervisorCorp">
+          <USelect v-model="reassignSupervisorCorpId"
+            :items="(data?.corporations ?? []).map((c) => ({ label: c.name, value: c.id }))"
+            :placeholder="`— ${CI.reassign.supervisorCorp} —`" class="w-full" />
+        </UFormField>
+        <UFormField :label="CI.reassign.supervisor">
+          <USelect v-model="reassignSupervisorId" :disabled="!reassignSupervisorCorpId"
+            :items="reassignSupervisors.map((u) => ({ label: u.fullName, value: u.id }))"
+            :placeholder="`— ${CI.reassign.supervisor} —`" class="w-full" />
+        </UFormField>
+
+        <UAlert v-if="reassignError" :title="reassignError" color="error" variant="soft"
+          icon="i-lucide-alert-triangle" />
+      </div>
+    </template>
+    <template #footer>
+      <div class="flex w-full justify-end gap-3">
+        <UButton color="neutral" variant="ghost" @click="showReassignModal = false">
+          {{ S.common.cancel }}
+        </UButton>
+        <UButton icon="i-lucide-save" :loading="reassignSaving" @click="saveReassign">
+          {{ CI.reassign.save }}
+        </UButton>
+      </div>
+    </template>
+  </UModal>
 </template>

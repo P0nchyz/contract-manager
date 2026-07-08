@@ -104,6 +104,24 @@ async function createUser() {
   }
 }
 
+// ─── Delete user ──────────────────────────────────────────────────────────────
+const deletingUserId = ref<string | null>(null)
+const usersActionError = ref<string | null>(null)
+
+async function deleteUser(user: { id: string; fullName: string }) {
+  usersActionError.value = null
+  if (!confirm(`${A.users.confirmDelete} "${user.fullName}"?`)) return
+  deletingUserId.value = user.id
+  try {
+    await repos.users.delete(user.id)
+    await refresh()
+  } catch (e) {
+    usersActionError.value = isRepositoryError(e) ? e.message : S.common.error
+  } finally {
+    deletingUserId.value = null
+  }
+}
+
 // ─── New entity form ──────────────────────────────────────────────────────────
 const showEntityForm = ref(false)
 const entityName = ref('')
@@ -223,6 +241,9 @@ async function createCorporation() {
 
       <!-- ─── Users tab ──────────────────────────────────────────────── -->
       <template v-if="activeTab === 'users'">
+        <UAlert v-if="usersActionError" class="mb-3" :title="usersActionError" color="error" variant="soft"
+          icon="i-lucide-alert-triangle" />
+
         <div v-if="!data?.users.length" class="py-16 text-center text-sm text-muted">
           {{ A.users.empty }}
         </div>
@@ -237,6 +258,7 @@ async function createCorporation() {
                   <th class="px-4 py-2.5 text-left font-medium">{{ A.users.columns.role }}</th>
                   <th class="px-4 py-2.5 text-left font-medium">{{ A.users.columns.corporation }}</th>
                   <th class="px-4 py-2.5 text-left font-medium">{{ A.users.columns.status }}</th>
+                  <th class="px-4 py-2.5 text-right font-medium">{{ A.users.columns.actions }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-default">
@@ -253,6 +275,10 @@ async function createCorporation() {
                   <td class="px-4 py-3">
                     <UBadge :label="user.active ? A.users.status.active : A.users.status.inactive"
                       :color="user.active ? 'success' : 'neutral'" variant="soft" size="sm" />
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    <UButton icon="i-lucide-trash-2" size="xs" color="error" variant="ghost"
+                      :loading="deletingUserId === user.id" :title="A.users.delete" @click="deleteUser(user)" />
                   </td>
                 </tr>
               </tbody>
@@ -300,6 +326,8 @@ async function createCorporation() {
 
       <!-- Entities tab -->
       <template v-if="activeTab === 'entities'">
+        <UAlert v-if="usersActionError" class="mb-3" :title="usersActionError" color="error" variant="soft"
+          icon="i-lucide-alert-triangle" />
         <div v-if="!data?.entities.length" class="py-16 text-center text-sm text-muted">{{ A.entities.empty }}</div>
         <UCard v-else :ui="{ body: 'p-0 sm:p-0' }">
           <div class="overflow-x-auto">
@@ -309,6 +337,7 @@ async function createCorporation() {
                   <th class="px-4 py-2.5 text-left font-medium">{{ A.entities.columns.name }}</th>
                   <th class="px-4 py-2.5 text-left font-medium">{{ A.entities.columns.username }}</th>
                   <th class="px-4 py-2.5 text-left font-medium">{{ A.entities.columns.status }}</th>
+                  <th class="px-4 py-2.5 text-right font-medium">{{ A.users.columns.actions }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-default">
@@ -318,6 +347,10 @@ async function createCorporation() {
                   <td class="px-4 py-3">
                     <UBadge :label="ent.active ? A.users.status.active : A.users.status.inactive"
                       :color="ent.active ? 'success' : 'neutral'" variant="soft" size="sm" />
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    <UButton icon="i-lucide-trash-2" size="xs" color="error" variant="ghost"
+                      :loading="deletingUserId === ent.id" :title="A.users.delete" @click="deleteUser(ent)" />
                   </td>
                 </tr>
               </tbody>

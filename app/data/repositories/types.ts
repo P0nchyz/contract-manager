@@ -330,6 +330,7 @@ export interface UserRepository {
   update(id: UserId, patch: Partial<Omit<CreateUserInput, 'password'>>): Promise<User>
   setActive(id: UserId, active: boolean): Promise<User>
   setPassword(id: UserId, password: string): Promise<void>
+  delete(id: UserId): Promise<void>
 }
 export interface CreateCorporationInput {
   name: string

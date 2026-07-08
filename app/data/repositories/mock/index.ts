@@ -1773,6 +1773,28 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
       async setPassword() {
         await delay()
       },
+      async delete(id) {
+        await delay()
+        const u = db.users.find((x) => x.id === id)
+        if (!u) throw notFound('Usuario')
+        if (id === currentUserId) {
+          throw new RepositoryError(409, 'No puedes eliminar tu propio usuario', 'cannot_delete_self')
+        }
+        const inUse = db.contracts.some(
+          (c) => c.entityId === id || c.residentId === id || c.superintendentId === id || c.supervisorId === id,
+        )
+        if (inUse) {
+          throw new RepositoryError(
+            409,
+            'Este usuario está asignado a uno o más contratos; desactívalo en vez de eliminarlo',
+            'user_in_use',
+          )
+        }
+        const idx = db.users.findIndex((x) => x.id === id)
+        db.users.splice(idx, 1)
+        delete db.passwords[id]
+        save()
+      },
     },
     corporations: {
       async list() {

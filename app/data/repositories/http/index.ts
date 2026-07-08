@@ -144,6 +144,7 @@ export function createHttpRepositories(http: HttpClient): Repositories {
       update: (id, patch) => http.patch<User>(`/users/${id}`, patch), // TODO(map)
       setActive: (id, active) => http.patch<User>(`/users/${id}`, { active }), // TODO(map)
       setPassword: (id, password) => http.post<void>(`/users/${id}/password`, { password }),
+      delete: (id) => http.delete<void>(`/users/${id}`), // TODO(map)
     },
     corporations: {
       list: () => http.get<Corporation[]>('/corporations'), // TODO(map)
