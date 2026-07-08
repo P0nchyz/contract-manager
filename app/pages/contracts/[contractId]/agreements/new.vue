@@ -26,7 +26,7 @@ const toInputDate = (d: Date | string | undefined) =>
 const { data, status, error, refresh } = await useAsyncData(
   () => `agreement-form-${contractId.value}-${editId.value ?? 'new'}`,
   async () => {
-    const [contract, sections, concepts, schedule, estimates, folders, files, editing] = await Promise.all([
+    const [contract, sections, concepts, schedule, estimates, folders, files, editing, agreements] = await Promise.all([
       repos.contracts.getById(contractId.value),
       repos.concepts.listSectionsByContract(contractId.value),
       repos.concepts.listByContract(contractId.value),
@@ -35,16 +35,27 @@ const { data, status, error, refresh } = await useAsyncData(
       repos.files.listFolders(contractId.value).catch(() => []),
       repos.files.listFiles(contractId.value).catch(() => []),
       editId.value ? repos.agreements.getById(editId.value).catch(() => null) : Promise.resolve(null),
+      repos.agreements.listByContract(contractId.value).catch(() => []),
     ])
     const periods = buildPeriods(
       new Date(contract.startDate), new Date(contract.endDate), contract.estimatePeriodicity ?? 'monthly',
     )
     return {
       contract, sections, concepts, groups: groupConceptsBySections(sections, concepts),
-      scheduleEntries: schedule?.entries ?? [], periods, estimates, folders, files, editing,
+      scheduleEntries: schedule?.entries ?? [], periods, estimates, folders, files, editing, agreements,
     }
   },
 )
+
+// ─── Block starting a new agreement while one is still unresolved ─────────────
+// (Only relevant when creating — editing an existing draft/with_notes one is
+// always allowed regardless of other agreements' state.)
+const blockingAgreement = computed(() => {
+  if (isEdit.value) return null
+  return (data.value?.agreements ?? []).find(
+    (a) => a.status !== 'approved' && a.status !== 'rejected',
+  ) ?? null
+})
 
 // ─── Kind — chosen explicitly, fixed once the agreement exists ──────────────
 const kind = ref<AgreementKind>(data.value?.editing?.kind ?? 'amount')
@@ -71,6 +82,10 @@ const newContractStartDate = computed(() =>
 const newContractEndDate = computed(() =>
   newContractEndRaw.value ? new Date(`${newContractEndRaw.value}T12:00:00`) : null,
 )
+
+// Declared early for the same reason: the watchEffect below (which runs
+// synchronously at setup) assigns to it when populating edit data.
+const existingAttachmentIds = ref<string[]>([])
 
 const inited = ref(false)
 watchEffect(() => {
@@ -399,7 +414,6 @@ const derivedMoves = computed<ScheduleMove[]>(() => {
 watch(derivedMoves, (v) => { scheduleMoves.value = v }, { immediate: true })
 
 // ─── Attachments ─────────────────────────────────────────────────────────────
-const existingAttachmentIds = ref<string[]>([])
 const existingAttachments = computed(() =>
   (data.value?.files ?? []).filter((f) => existingAttachmentIds.value.includes(f.id)),
 )
@@ -669,6 +683,10 @@ async function onSave() {
         <USkeleton class="h-24 w-full rounded-lg" />
         <USkeleton class="h-48 w-full rounded-lg" />
       </div>
+
+      <UAlert v-else-if="blockingAgreement" color="neutral" variant="soft" icon="i-lucide-info"
+        :title="AG.blockedByUnresolved.title" :description="AG.blockedByUnresolved.description"
+        :actions="[{ label: AG.blockedByUnresolved.view, color: 'neutral', variant: 'subtle', to: `/contracts/${contractId}/agreements/${blockingAgreement.id}` }]" />
 
       <div v-else class="flex flex-col gap-6">
         <!-- Kind selector — fixed once the agreement exists -->

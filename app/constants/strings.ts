@@ -409,6 +409,7 @@ export const S = {
       new: 'Nuevo convenio',
       number: 'Convenio No.',
       kindLabel: { amount: 'De monto', schedule: 'De plazo' },
+      blockedByUnresolved: 'Ya hay un convenio modificatorio en proceso. Debe aprobarse, rechazarse o eliminarse antes de crear uno nuevo.',
     },
     closing: {
       reception: 'Acta de recepción',
@@ -423,6 +424,11 @@ export const S = {
     titlePrefix: 'Convenio',
     newTitle: 'Nuevo convenio modificatorio',
     editTitlePrefix: 'Editar convenio',
+    blockedByUnresolved: {
+      title: 'Ya hay un convenio modificatorio en proceso',
+      description: 'Debe aprobarse, rechazarse o eliminarse antes de poder crear uno nuevo.',
+      view: 'Ver convenio',
+    },
     kind: { amount: 'De monto', schedule: 'De plazo' },
     kindSelector: {
       title: '¿Qué tipo de convenio es?',

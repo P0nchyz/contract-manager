@@ -1180,6 +1180,17 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
       },
       async create(input: CreateAgreementInput) {
         await delay()
+        const unresolved = db.agreements.find(
+          (x) => x.contractId === input.contractId &&
+            x.status !== 'approved' && x.status !== 'rejected',
+        )
+        if (unresolved) {
+          throw new RepositoryError(
+            409,
+            'Ya hay un convenio modificatorio en proceso; debe resolverse (aprobarse, rechazarse o eliminarse) antes de crear otro',
+            'agreement_in_progress',
+          )
+        }
         const a: ModificationAgreement = {
           id: genId('AG'),
           contractId: input.contractId,

@@ -62,6 +62,10 @@ const { data, status, error, refresh } = await useAsyncData(
 )
 
 const canCreateAgreement = computed(() => can('agreement:create'))
+const hasUnresolvedAgreement = computed(() =>
+  (data.value?.agreements ?? []).some((a) => a.status !== 'approved' && a.status !== 'rejected'),
+)
+const canStartNewAgreement = computed(() => canCreateAgreement.value && !hasUnresolvedAgreement.value)
 const canInitiateReception = computed(() => can('close:initiate'))
 
 // ─── Contract documents viewer ─────────────────────────────────────────────────
@@ -253,8 +257,7 @@ const totalContracted = computed(() =>
                   {{ CI.documents.empty }}
                 </div>
                 <ul v-else class="divide-y divide-default">
-                  <li v-for="file in data.contractDocuments" :key="file.id"
-                    class="flex items-center gap-3 py-2.5">
+                  <li v-for="file in data.contractDocuments" :key="file.id" class="flex items-center gap-3 py-2.5">
                     <UIcon :name="fileIcon(file.mimeType)" class="size-4 shrink-0 text-muted" />
                     <button type="button"
                       class="min-w-0 flex-1 truncate text-left text-sm text-highlighted hover:underline"
@@ -274,12 +277,15 @@ const totalContracted = computed(() =>
                       <UIcon name="i-lucide-file-plus-2" class="size-4 text-muted" />
                       {{ CI.sections.agreements }}
                     </div>
-                    <UButton v-if="canCreateAgreement" icon="i-lucide-plus" size="sm" color="neutral" variant="outline"
-                      :to="`/contracts/${contractId}/agreements/new`">
+                    <UButton v-if="canStartNewAgreement" icon="i-lucide-plus" size="sm" color="neutral"
+                      variant="outline" :to="`/contracts/${contractId}/agreements/new`">
                       {{ CI.agreements.new }}
                     </UButton>
                   </div>
                 </template>
+
+                <UAlert v-if="canCreateAgreement && hasUnresolvedAgreement" class="mb-3" color="neutral" variant="soft"
+                  icon="i-lucide-info" :title="CI.agreements.blockedByUnresolved" />
 
                 <div v-if="!data.agreements.length" class="text-sm text-muted">
                   {{ CI.agreements.empty }}
@@ -385,7 +391,7 @@ const totalContracted = computed(() =>
           <template #concepts>
             <div class="mt-4 space-y-4">
               <UAlert color="neutral" variant="soft" icon="i-lucide-lock" :title="C.readonlyNotice"
-                :actions="canCreateAgreement ? [{ label: S.contractInfo.agreements.new, color: 'neutral', variant: 'subtle', to: `/contracts/${contractId}/agreements/new` }] : undefined" />
+                :actions="canStartNewAgreement ? [{ label: S.contractInfo.agreements.new, color: 'neutral', variant: 'subtle', to: `/contracts/${contractId}/agreements/new` }] : undefined" />
 
               <div class="flex items-center gap-3">
                 <UInput v-model="conceptSearch" :placeholder="C.search" icon="i-lucide-search" class="max-w-xs" />
@@ -437,14 +443,16 @@ const totalContracted = computed(() =>
 
                         <tr v-for="c in group.concepts" :key="c.id"
                           class="border-t border-default/50 hover:bg-elevated/40 transition-colors">
-                          <td class="px-4 py-2.5 pl-8 font-mono text-xs text-highlighted">{{ c.specificationNumber }}</td>
+                          <td class="px-4 py-2.5 pl-8 font-mono text-xs text-highlighted">{{ c.specificationNumber }}
+                          </td>
                           <td class="min-w-[18rem] px-4 py-2.5 text-highlighted">
                             {{ c.description }}
                             <UBadge v-if="c.isExtra" :label="C.extraBadge" color="warning" variant="subtle" size="xs"
                               class="ml-1.5" />
                           </td>
                           <td class="px-4 py-2.5 text-muted">{{ c.unit }}</td>
-                          <td class="px-4 py-2.5 text-right tabular-nums text-highlighted">{{ formatMoney(c.unitPrice) }}
+                          <td class="px-4 py-2.5 text-right tabular-nums text-highlighted">{{ formatMoney(c.unitPrice)
+                            }}
                           </td>
                           <td class="px-4 py-2.5 text-right tabular-nums text-highlighted">{{
                             formatNumber(c.contractedQuantity) }}</td>
