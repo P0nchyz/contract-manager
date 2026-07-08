@@ -381,8 +381,13 @@ export const S = {
     sections: {
       general: 'Datos generales',
       parties: 'Partes',
+      documents: 'Documentos del contrato',
       agreements: 'Convenios modificatorios',
       closing: 'Cierre del contrato',
+    },
+    documents: {
+      empty: 'No se cargaron documentos al crear el contrato.',
+      viewInFiles: 'Ver todos los archivos',
     },
     fields: {
       code: 'Clave / licitación',

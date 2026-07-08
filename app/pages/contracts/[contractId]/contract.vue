@@ -5,6 +5,8 @@ import { isRepositoryError } from '~/data/errors'
 import { agreementStatusDisplay, contractStatusDisplay, formatNumber } from '~/utils/format'
 import { buildPeriods } from '~/data/calc/schedule'
 import { groupConceptsBySections } from '~/composables/useConceptSections'
+import { fileIcon } from '~/utils/fileIcon'
+import type { FileAsset } from '~/data/models'
 
 definePageMeta({ requiredPermission: 'estimate:view' })
 
@@ -22,7 +24,7 @@ const contractId = computed(() => route.params.contractId as string)
 const { data, status, error, refresh } = await useAsyncData(
   () => `contract-info-${contractId.value}`,
   async () => {
-    const [contract, agreements, reception, finiquito, users, corporations, sections, concepts, schedule] = await Promise.all([
+    const [contract, agreements, reception, finiquito, users, corporations, sections, concepts, schedule, folders] = await Promise.all([
       repos.contracts.getById(contractId.value),
       repos.agreements.listByContract(contractId.value),
       repos.reception.getByContract(contractId.value).catch(() => null),
@@ -32,7 +34,13 @@ const { data, status, error, refresh } = await useAsyncData(
       repos.concepts.listSectionsByContract(contractId.value).catch(() => []),
       repos.concepts.listByContract(contractId.value).catch(() => []),
       repos.schedule.getByContract(contractId.value).catch(() => null),
+      repos.files.listFolders(contractId.value).catch(() => []),
     ])
+    // Documents uploaded at contract creation live in the predefined 'contract' folder.
+    const contractFolder = folders.find((f) => f.kind === 'contract')
+    const contractDocuments = contractFolder
+      ? await repos.files.listFiles(contractId.value, contractFolder.id).catch(() => [])
+      : []
     const nameOf = (id: string | null | undefined) =>
       users.find((u) => u.id === id)?.fullName ?? '—'
     const corpName = corporations.find(
@@ -48,12 +56,26 @@ const { data, status, error, refresh } = await useAsyncData(
     return {
       contract, agreements, reception, finiquito, nameOf, corpName, supCorpName,
       sections, concepts, groups, periods, scheduleEntries: schedule?.entries ?? [],
+      contractDocuments,
     }
   },
 )
 
 const canCreateAgreement = computed(() => can('agreement:create'))
 const canInitiateReception = computed(() => can('close:initiate'))
+
+// ─── Contract documents viewer ─────────────────────────────────────────────────
+const viewerOpen = ref(false)
+const viewingFile = ref<FileAsset | null>(null)
+function openViewer(file: FileAsset) {
+  viewingFile.value = file
+  viewerOpen.value = true
+}
+function formatBytes(n: number) {
+  if (n < 1024) return `${n} B`
+  if (n < 1_048_576) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1_048_576).toFixed(1)} MB`
+}
 
 // Latest 3 agreements for the summary card; full list links to an index.
 const recentAgreements = computed(() => data.value?.agreements.slice(-3).reverse() ?? [])
@@ -210,6 +232,38 @@ const totalContracted = computed(() =>
                     <dd class="text-highlighted">{{ data.nameOf(data.contract.supervisorId) }}</dd>
                   </div>
                 </dl>
+              </UCard>
+
+              <!-- Contract documents -->
+              <UCard>
+                <template #header>
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 font-medium">
+                      <UIcon name="i-lucide-paperclip" class="size-4 text-muted" />
+                      {{ CI.sections.documents }}
+                    </div>
+                    <UButton icon="i-lucide-folder-open" size="sm" color="neutral" variant="ghost"
+                      :to="`/contracts/${contractId}/files`">
+                      {{ CI.documents.viewInFiles }}
+                    </UButton>
+                  </div>
+                </template>
+
+                <div v-if="!data.contractDocuments.length" class="text-sm text-muted">
+                  {{ CI.documents.empty }}
+                </div>
+                <ul v-else class="divide-y divide-default">
+                  <li v-for="file in data.contractDocuments" :key="file.id"
+                    class="flex items-center gap-3 py-2.5">
+                    <UIcon :name="fileIcon(file.mimeType)" class="size-4 shrink-0 text-muted" />
+                    <button type="button"
+                      class="min-w-0 flex-1 truncate text-left text-sm text-highlighted hover:underline"
+                      @click="openViewer(file)">
+                      {{ file.name }}
+                    </button>
+                    <span class="shrink-0 text-xs text-muted">{{ formatBytes(file.sizeBytes) }}</span>
+                  </li>
+                </ul>
               </UCard>
 
               <!-- Modification agreements -->
@@ -434,4 +488,6 @@ const totalContracted = computed(() =>
       </div>
     </template>
   </UDashboardPanel>
+
+  <FileViewerModal v-model:open="viewerOpen" :file="viewingFile" />
 </template>
