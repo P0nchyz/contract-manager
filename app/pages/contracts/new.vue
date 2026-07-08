@@ -278,7 +278,7 @@ const scheduleErrors = computed(() =>
     const contracted = parseFloat(c._qtyRaw) || 0
     const total = conceptTotals.value[ci] ?? 0
     const row = scheduleGrid.value[ci] ?? []
-    if (row.some((v) => v.trim() !== '' && !Number.isInteger(parseFloat(v)))) {
+    if (row.some((v) => String(v).trim() !== '' && !Number.isInteger(parseFloat(String(v))))) {
       return F.schedule.validation.qtyInteger
     }
     if (contracted > 0 && Math.abs(total - contracted) > 0.001) return F.schedule.validation.sumMismatch
