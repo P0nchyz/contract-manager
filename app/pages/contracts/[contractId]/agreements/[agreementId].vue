@@ -76,7 +76,10 @@ const canSign = computed(
 const canReturn = computed(
   () => (st.value === 'submitted' || st.value === 'pending_entity') && can('closeFlow:returnWithNotes'),
 )
-const canReject = computed(() => st.value === 'submitted' && can('closeFlow:reject'))
+const canReject = computed(() =>
+  (st.value === 'submitted' && can('closeFlow:reject')) ||
+  (st.value === 'pending_entity' && role.value === 'entity' && can('agreement:approve')),
+)
 const canApproveAsEntity = computed(
   () => st.value === 'pending_entity' && can('agreement:approve'),
 )

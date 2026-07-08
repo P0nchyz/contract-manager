@@ -364,6 +364,48 @@ export function createMockRepositories(): Repositories {
     }
     return claimed
   }
+  // Re-validates an agreement's scheduleMoves against the CURRENT state of the
+  // schedule/estimates — same checks `approve()` applies when it actually
+  // moves quantity, but read-only, so it can run earlier (at submit time) to
+  // stop the creator from sending an agreement that's already gone stale
+  // because someone else claimed the volume in the meantime. "new:N"
+  // placeholders (concepts that don't exist yet) are skipped since they can
+  // only ever be pure allocations (nothing to check on the "from" side).
+  function validateAgreementScheduleMoves(a: ModificationAgreement): void {
+    if (!a.scheduleMoves?.length) return
+    const schedule = db.schedules.find((s) => s.contractId === a.contractId)
+    if (!schedule) return
+    for (const move of a.scheduleMoves) {
+      const rawConceptId = String(move.conceptId)
+      if (/^new:(\d+)$/.test(rawConceptId)) continue
+      const conceptId = move.conceptId
+      if (move.fromPeriodIndex >= 0) {
+        const from = schedule.entries.find(
+          (e) => String(e.conceptId) === String(conceptId) && e.periodIndex === move.fromPeriodIndex,
+        )
+        const currentPlanned = from?.plannedQuantity ?? 0
+        const claimed = claimedQuantityForConceptPeriod(a.contractId, String(conceptId), move.fromPeriodIndex)
+        const unclaimed = currentPlanned - claimed
+        if (move.quantity > unclaimed) {
+          throw new RepositoryError(
+            409,
+            `Ya no hay suficiente volumen sin reclamar en el período ${move.fromPeriodIndex + 1} para este movimiento`,
+            'insufficient_unclaimed',
+          )
+        }
+      }
+      if (move.toPeriodIndex >= 0) {
+        const targetClaimed = claimedQuantityForConceptPeriod(a.contractId, String(conceptId), move.toPeriodIndex)
+        if (targetClaimed > 0) {
+          throw new RepositoryError(
+            409,
+            `El período destino ${move.toPeriodIndex + 1} ya tiene una estimación para este concepto`,
+            'target_already_estimated',
+          )
+        }
+      }
+    }
+  }
   // If an estimate is rejected, every later period built on top of it is no
   // longer valid either — auto-reject any newer draft/submitted estimates so
   // they must be redone once the earlier period is fixed. Already-rejected
@@ -707,6 +749,12 @@ export function createMockRepositories(): Repositories {
           }
           // Drafts are only visible to their creator
           if (e.status === 'draft') return e.createdById === user.id
+          // Resident only sees an estimate once the supervisor has signed off —
+          // enforces supervisor-then-resident review order.
+          if (user.role === 'resident') {
+            const supervisorSigned = e.signatures.some((s) => s.role === 'supervisor' && s.status === 'signed')
+            if (!supervisorSigned) return false
+          }
           return true
         })
         return clone(list)
@@ -715,6 +763,11 @@ export function createMockRepositories(): Repositories {
         await delay()
         const e = db.estimates.find((x) => x.id === id)
         if (!e) throw notFound('Estimación')
+        const user = currentUser()
+        if (user.role === 'resident') {
+          const supervisorSigned = e.signatures.some((s) => s.role === 'supervisor' && s.status === 'signed')
+          if (!supervisorSigned) throw notFound('Estimación')
+        }
         return clone(e)
       },
       async create(input: CreateEstimateInput) {
@@ -1214,6 +1267,7 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
           updatedAt: new Date(),
         }
         db.agreements.push(a)
+        trySignAsCreator(a.signatures)
         save()
         return clone(a)
       },
@@ -1246,7 +1300,18 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
         save()
       },
       async submit(id) {
-        return transition(db.agreements, id, 'Convenio', 'submitted', 'submitted')
+        await delay()
+        const a = db.agreements.find((x) => x.id === id)
+        if (!a) throw notFound('Convenio')
+        if (a.status !== 'draft') {
+          throw new RepositoryError(409, 'Solo se envían borradores', 'wrong_status')
+        }
+        validateAgreementScheduleMoves(a)
+        a.status = 'submitted'
+        a.history.push(event('submitted'))
+        a.updatedAt = new Date()
+        save()
+        return clone(a)
       },
       async approve(id) {
         await delay()
@@ -1257,6 +1322,11 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
         if (a.status !== 'pending_entity') {
           throw new RepositoryError(409, 'El convenio debe estar pendiente de aprobación de entidad', 'wrong_status')
         }
+        // Re-validate before mutating anything — if this throws, the agreement
+        // stays exactly as it was (still pending_entity), instead of ending up
+        // half-applied (status flipped, concepts/sections created, but the
+        // moves loop below aborting partway through).
+        validateAgreementScheduleMoves(a)
         a.status = 'approved'
         a.history.push(event('entity_approved'))
         // Apply contract date overrides and new sections/concepts now that entity approved
@@ -1383,7 +1453,21 @@ Ambas partes reconocen la obligatoriedad y validez jurídica de los asientos rea
         return transition(db.agreements, id, 'Convenio', 'with_notes', 'returned_with_notes', note)
       },
       async reject(id, note) {
-        return transition(db.agreements, id, 'Convenio', 'rejected', 'rejected', note)
+        await delay()
+        const a = db.agreements.find((x) => x.id === id)
+        if (!a) throw notFound('Convenio')
+        const role = currentUser().role
+        const allowed =
+          (role === 'resident' && a.status === 'submitted') ||
+          (role === 'entity' && a.status === 'pending_entity')
+        if (!allowed) {
+          throw new RepositoryError(409, 'El convenio no puede rechazarse en su estado actual', 'wrong_status')
+        }
+        a.status = 'rejected'
+        a.history.push(event('rejected', note))
+        a.updatedAt = new Date()
+        save()
+        return clone(a)
       },
       async sign(id) {
         await delay()
