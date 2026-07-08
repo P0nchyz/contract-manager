@@ -132,7 +132,7 @@ function fmt(d: Date | string) {
 
       <template v-else-if="data">
         <!-- ─── Filters ───────────────────────────────────────────────── -->
-        <UCard class="mb-4" :ui="{ body: 'py-3' }">
+        <UCard class="mb-4 overflow-visible" :ui="{ body: 'py-3' }">
           <div class="flex flex-wrap gap-3">
             <UInput v-model="searchText" icon="i-lucide-search" :placeholder="L.search.placeholder"
               class="min-w-[14rem] flex-1" />
